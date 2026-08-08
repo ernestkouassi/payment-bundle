@@ -1,0 +1,21 @@
+error:
+  internal: 'An error occurred while processing the payment. Please try again.'
+  service_unavailable: 'Payment service is currently unavailable.'
+gateway:
+  misconfigured: 'Payment gateway configuration error.'
+  http_error: 'Payment gateway communication error.'
+  network_error: 'Unable to reach the payment gateway.'
+  unexpected_response: 'Unexpected response from payment gateway.'
+  declined: 'Payment declined by the gateway.'
+  not_found: 'Payment gateway not found.'
+  not_configured: 'Payment gateway is not configured.'
+callback:
+  invalid_signature: 'Invalid payment notification signature.'
+  missing_signature: 'Missing payment notification signature.'
+  unsupported_algorithm: 'Unsupported signature algorithm.'
+  malformed_payload: 'Malformed payment notification payload.'
+  missing_field: 'Missing required field in payment notification.'
+  expired_request: 'Payment notification request has expired.'
+  replay_detected: 'Payment notification already processed.'
+payment:
+  internal_error: 'An internal payment error occurred.'

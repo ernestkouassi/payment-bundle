@@ -1,0 +1,53 @@
+{
+  "name": "e2k/payment-bundle",
+  "description": "Symfony payment gateway abstraction bundle (CentralBill, extensible).",
+  "type": "symfony-bundle",
+  "license": "MIT",
+  "keywords" : [
+    "payment",
+    "gateway",
+    "centralbill",
+    "symfony",
+    "bundle"
+  ],
+  "authors": [
+    {
+      "name": "Ernest KOUASSI",
+      "email": "ernestkouassi02@gmail.com"
+    }
+  ],
+  "autoload": {
+    "psr-4": {
+      "E2K\\PaymentBundle\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "E2K\\PaymentBundle\\Tests\\": "tests"
+    }
+  },
+  "extra": {
+    "symfony": {
+      "require": "^6.4 || ^7.4",
+      "allow-contrib": true
+    }
+  },
+  "require": {
+    "php": ">=8.2",
+    "symfony/http-kernel": "^6.4 || ^7.4",
+    "symfony/http-foundation": "^6.4 || ^7.4",
+    "symfony/dependency-injection": "^6.4 || ^7.4",
+    "symfony/config": "^6.4 || ^7.4",
+    "psr/log": "^3.0"
+  },
+  "require-dev": {
+    "phpstan/phpstan": "^1.10",
+    "phpunit/phpunit": "^11.0",
+    "symfony/framework-bundle": "^6.4 || ^7.4",
+    "symfony/phpunit-bridge": "^7.4",
+    "symfony/translation": "^8.1"
+  },
+  "config": {
+    "sort-packages": true
+  }
+}

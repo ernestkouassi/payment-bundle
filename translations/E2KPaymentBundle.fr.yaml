@@ -1,0 +1,21 @@
+error:
+  internal: 'Une erreur est survenue lors du traitement du paiement. Veuillez réessayer.'
+  service_unavailable: 'Le service de paiement est temporairement indisponible.'
+gateway:
+  misconfigured: 'Erreur de configuration de la passerelle de paiement.'
+  http_error: 'Erreur de communication avec la passerelle de paiement.'
+  network_error: 'Impossible de joindre la passerelle de paiement.'
+  unexpected_response: 'Réponse inattendue de la passerelle de paiement.'
+  declined: 'Paiement refusé par la passerelle.'
+  not_found: 'Passerelle de paiement introuvable.'
+  not_configured: 'La passerelle de paiement n''est pas configurée.'
+callback:
+  invalid_signature: 'Signature de notification de paiement invalide.'
+  missing_signature: 'Signature de notification de paiement manquante.'
+  unsupported_algorithm: 'Algorithme de signature non supporté.'
+  malformed_payload: 'Corps de notification de paiement malformé.'
+  missing_field: 'Champ obligatoire manquant dans la notification de paiement.'
+  expired_request: 'La requête de notification de paiement a expiré.'
+  replay_detected: 'Notification de paiement déjà traitée.'
+payment:
+  internal_error: 'Une erreur interne de paiement est survenue.'
