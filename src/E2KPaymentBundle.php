@@ -23,6 +23,8 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
  */
 final class E2KPaymentBundle extends AbstractBundle
 {
+    protected string $extensionAlias = 'e2k_payment';
+
     public function configure(DefinitionConfigurator $definition): void
     {
         $definition->rootNode()
