@@ -18,7 +18,7 @@ interface PaymentGatewayInterface extends
     CallbackHandlerInterface
 {
     /**
-     * Unique gateway identifier (snake_case). Used as a key in the ServiceLocator. Ex: 'centralbill', 'wave', 'orange_money'
+     * Unique gateway identifier (snake_case). Used as a key in the ServiceLocator. Ex: 'centralbill', 'wave', 'orange_money'.
      */
     public static function getName(): string;
 

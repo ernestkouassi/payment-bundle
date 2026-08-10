@@ -24,8 +24,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
 
     public function __construct(
         private CentralBillConfig $config,
-    )
-    {
+    ) {
         $this->signatureVerifier = new CentralBillSignatureVerifier(
             $this->config->applicationSecret,
         );
@@ -38,8 +37,8 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return !empty($this->config->applicationId)
-            && !empty($this->config->applicationSecret);
+        return ! empty($this->config->applicationId)
+            && ! empty($this->config->applicationSecret);
     }
 
     /**
@@ -47,8 +46,8 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
      */
     public function initiate(PaymentRequest $request): PaymentResponse
     {
-        if (!$this->isConfigured()) {
-            throw GatewayException::configurationError(CentralBillGateway::getName(), 'applicationId or applicationSecret is empty.');
+        if (! $this->isConfigured()) {
+            throw GatewayException::configurationError(self::getName(), 'applicationId or applicationSecret is empty.');
         }
 
         $issuedAt = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
@@ -75,9 +74,9 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
             'signature' => $signature,
             'callbackUrl' => $request->callbackUrl ?? $this->config->defaultCallbackUrl,
             'redirectUrl' => $request->returnUrl ?? $this->config->defaultRedirectUrl,
-        ], static fn($v) => $v !== null && $v !== '');
+        ], static fn($v) => null !== $v && '' !== $v);
 
-        $redirectUrl = sprintf(
+        $redirectUrl = \sprintf(
             '%s/?%s',
             rtrim($this->config->webPayBaseUrl, '/'),
             http_build_query($params),
@@ -115,7 +114,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
     {
         $body = json_decode($payload->getBody(), true);
 
-        if (!is_array($body)) {
+        if (! \is_array($body)) {
             throw InvalidCallbackException::malformedPayload('Invalid JSON body.');
         }
 
@@ -124,29 +123,29 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
         $invoiceId = $body['invoice']['id'] ?? null;
         $amount = $body['invoice']['totalAmount']['amount'] ?? null;
 
-        if (!$transactionId) {
+        if (! $transactionId) {
             throw InvalidCallbackException::missingField('id');
         }
-        if (!$cbStatus) {
+        if (! $cbStatus) {
             throw InvalidCallbackException::missingField('result.status');
         }
-        if (!$invoiceId) {
+        if (! $invoiceId) {
             throw InvalidCallbackException::missingField('invoice.id');
         }
 
         $status = CentralBillStatus::toPaymentStatus($cbStatus);
 
         $errorMessage = null;
-        if (!$status->isSuccessful()) {
+        if (! $status->isSuccessful()) {
             $errorMessage = $body['result']['statusReason']
-                ?? sprintf('Transaction %s by CentralBill.', strtolower($cbStatus));
+                ?? \sprintf('Transaction %s by CentralBill.', strtolower($cbStatus));
         }
 
         return new CallbackResult(
             status: $status,
             invoiceId: $invoiceId,
             gatewayTransactionId: $transactionId,
-            amount: isset($amount) ? (int)$amount : null,
+            amount: isset($amount) ? (int) $amount : null,
             errorMessage: $errorMessage,
             rawPayload: $body,
         );
@@ -163,11 +162,10 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
     private function generatePaymentSignature(
         string $invoiceId,
         string $customerId,
-        int    $amount,
+        int $amount,
         string $currency,
-    ): string
-    {
-        return hash('sha256', sprintf(
+    ): string {
+        return hash('sha256', \sprintf(
             '%s,%s,%s,%s,%s,%s',
             $this->config->applicationId,
             $invoiceId,

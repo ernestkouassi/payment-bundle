@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace E2K\PaymentBundle\Tests\Resolver;
@@ -11,13 +12,16 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+/**
+ * @author Ernest KOUASSI <ernestkouassi02@gmail.com>
+ */
 #[CoversClass(ActiveGatewayResolver::class)]
 final class ActiveGatewayResolverTest extends TestCase
 {
     #[Test]
-    public function it_resolves_the_default_gateway(): void
+    public function itResolvesTheDefaultGateway(): void
     {
-        $gateway  = $this->makeConfiguredGateway('centralbill');
+        $gateway = $this->makeConfiguredGateway('centralbill');
         $registry = $this->makeRegistry('centralbill', $gateway);
         $resolver = new ActiveGatewayResolver($registry, 'centralbill');
 
@@ -25,9 +29,9 @@ final class ActiveGatewayResolverTest extends TestCase
     }
 
     #[Test]
-    public function it_resolves_an_explicit_gateway_by_name(): void
+    public function itResolvesAnExplicitGatewayByName(): void
     {
-        $gateway  = $this->makeConfiguredGateway('wave');
+        $gateway = $this->makeConfiguredGateway('wave');
         $registry = $this->makeRegistry('wave', $gateway);
         $resolver = new ActiveGatewayResolver($registry, 'centralbill');
 
@@ -35,7 +39,7 @@ final class ActiveGatewayResolverTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_when_gateway_is_not_found(): void
+    public function itThrowsWhenGatewayIsNotFound(): void
     {
         $this->expectException(GatewayNotFoundException::class);
 
@@ -47,7 +51,7 @@ final class ActiveGatewayResolverTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_when_gateway_is_not_configured(): void
+    public function itThrowsWhenGatewayIsNotConfigured(): void
     {
         $this->expectException(GatewayNotFoundException::class);
 
@@ -58,10 +62,6 @@ final class ActiveGatewayResolverTest extends TestCase
         $resolver = new ActiveGatewayResolver($registry, 'centralbill');
         $resolver->resolve();
     }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
     private function makeConfiguredGateway(string $name): PaymentGatewayInterface
     {

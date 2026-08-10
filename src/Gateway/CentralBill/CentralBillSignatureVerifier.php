@@ -11,28 +11,26 @@ use E2K\PaymentBundle\Exception\InvalidCallbackException;
  * Expected Signature Header:
  *  keyId="...", algorithm="hmac-sha256",
  *  headers="(request-target) content-type date digest",
- *  signature="<base64>"
+ *  signature="<base64>".
  */
 final readonly class CentralBillSignatureVerifier
 {
     public function __construct(
         private string $applicationSecret,
-    )
-    {
-    }
+    ) {}
 
     /**
-     * @param array<string, string|string[]> $headers HTTP headers (will be normalized to lowercase)
-     * @param string $method HTTP method in lowercase ("post")
-     * @param string $requestUri Request URI ("/payments/callback/centralbill")
+     * @param array<string, string|string[]> $headers    HTTP headers (will be normalized to lowercase)
+     * @param string                         $method     HTTP method in lowercase ("post")
+     * @param string                         $requestUri Request URI ("/payments/callback/centralbill")
      *
      * @throws InvalidCallbackException
      */
     public function verify(array $headers, string $method, string $requestUri): void
     {
         $headers = array_map(
-            static fn($v) => is_array($v) ? implode(', ', $v) : $v,
-            array_change_key_case($headers, CASE_LOWER),
+            static fn($v) => \is_array($v) ? implode(', ', $v) : $v,
+            array_change_key_case($headers, \CASE_LOWER),
         );
 
         $rawSignatureHeader = $headers['signature'] ?? null;
@@ -45,7 +43,7 @@ final readonly class CentralBillSignatureVerifier
 
         foreach (['keyid', 'algorithm', 'headers', 'signature'] as $required) {
             if (empty($components[$required])) {
-                throw InvalidCallbackException::missingField("Signature.$required");
+                throw InvalidCallbackException::missingField("Signature.{$required}");
             }
         }
 
@@ -58,30 +56,27 @@ final readonly class CentralBillSignatureVerifier
 
         foreach ($signedHeaders as $headerName) {
             if ('(request-target)' === $headerName) {
-                $signingParts[] = sprintf('(request-target): %s %s', strtolower($method), $requestUri);
+                $signingParts[] = \sprintf('(request-target): %s %s', strtolower($method), $requestUri);
             } else {
-                if (!isset($headers[$headerName])) {
+                if (! isset($headers[$headerName])) {
                     throw InvalidCallbackException::missingField($headerName);
                 }
-                $signingParts[] = sprintf('%s: %s', $headerName, $headers[$headerName]);
+                $signingParts[] = \sprintf('%s: %s', $headerName, $headers[$headerName]);
             }
         }
 
         $signingString = implode("\n", $signingParts);
         $expectedSig = base64_encode(
-            hash_hmac('sha256', $signingString, $this->applicationSecret, true)
+            hash_hmac('sha256', $signingString, $this->applicationSecret, true),
         );
 
-        if (!hash_equals($expectedSig, $components['signature'])) {
-            throw InvalidCallbackException::invalidSignature(
-                'HMAC mismatch',
-                ['signing_string' => $signingString],
-            );
+        if (! hash_equals($expectedSig, $components['signature'])) {
+            throw InvalidCallbackException::invalidSignature('HMAC mismatch', ['signing_string' => $signingString]);
         }
     }
 
     /**
-     * Parse : keyId="...", algorithm="...", headers="...", signature="..."
+     * Parse : keyId="...", algorithm="...", headers="...", signature="...".
      *
      * @return array<string, string>
      */
@@ -92,7 +87,7 @@ final readonly class CentralBillSignatureVerifier
         foreach (preg_split('/,(?=(?:[^"]*"[^"]*")*[^"]*$)/', $header) as $part) {
             $parts = explode('=', trim($part), 2);
 
-            if (2 !== count($parts)) {
+            if (2 !== \count($parts)) {
                 continue;
             }
 

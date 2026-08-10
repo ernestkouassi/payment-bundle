@@ -16,7 +16,7 @@ interface PaymentInitiatorInterface
     /**
      * Initialises a payment with the gateway.
      *
-     * @throws GatewayException If the gateway returns an error.
+     * @throws GatewayException if the gateway returns an error
      */
     public function initiate(PaymentRequest $request): PaymentResponse;
 }

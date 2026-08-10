@@ -24,12 +24,12 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 final class PaymentExceptionListener implements EventSubscriberInterface
 {
     /**
-     * @var string The prefix for payment-related routes.
+     * @var string the prefix for payment-related routes
      */
     private const PAYMENT_ROUTE_PREFIX = '/payments/';
 
     /**
-     * @var string The domain for translation keys.
+     * @var string the domain for translation keys
      */
     private const TRANSLATION_DOMAIN = 'E2KPaymentBundle';
 
@@ -38,9 +38,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
         private readonly KernelInterface $kernel,
         private readonly TranslatorInterface $translator,
         private readonly ?string $paymentRoutePrefix = self::PAYMENT_ROUTE_PREFIX,
-    )
-    {
-    }
+    ) {}
 
     public static function getSubscribedEvents(): array
     {
@@ -54,7 +52,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
         $exception = $event->getThrowable();
         $request = $event->getRequest();
 
-        if (!str_starts_with($request->getPathInfo(), $this->paymentRoutePrefix)) {
+        if (! str_starts_with($request->getPathInfo(), $this->paymentRoutePrefix)) {
             return;
         }
 
@@ -65,7 +63,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
             default => null,
         };
 
-        if ($response === null) {
+        if (null === $response) {
             return;
         }
 
@@ -98,7 +96,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
     {
         [$httpStatus, $errorCode] = $this->resolveCallbackMeta($e);
 
-        $logLevel = $e->getReason() === Reason::REPLAY_DETECTED ? 'warning' : 'error';
+        $logLevel = Reason::REPLAY_DETECTED === $e->getReason() ? 'warning' : 'error';
         $this->logger->$logLevel('IPN callback rejected', [
             'reason' => $e->getReason()->name,
             'message' => $e->getMessage(),
@@ -122,9 +120,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
             'message' => $e->getMessage(),
         ]);
 
-        $errorCode = $e->getPrevious() instanceof \RuntimeException
-            ? PaymentErrorCode::GATEWAY_NOT_CONFIGURED
-            : PaymentErrorCode::GATEWAY_NOT_FOUND;
+        $errorCode = $e->getPrevious() instanceof \RuntimeException ? PaymentErrorCode::GATEWAY_NOT_CONFIGURED : PaymentErrorCode::GATEWAY_NOT_FOUND;
 
         return new ApiErrorResponse(
             code: $errorCode,
@@ -169,7 +165,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
 
     private function safeMessage(\Throwable $e, int $httpStatus): string
     {
-        if ($httpStatus >= 500 && !$this->isDebug()) {
+        if ($httpStatus >= 500 && ! $this->isDebug()) {
             return 'An error occurred while processing the payment. Please try again.';
         }
 
@@ -182,13 +178,12 @@ final class PaymentExceptionListener implements EventSubscriberInterface
      */
     private function clientMessage(\Throwable $e, int $httpStatus): string
     {
-        if ($httpStatus >= 500 && !$this->kernel->isDebug()) {
+        if ($httpStatus >= 500 && ! $this->kernel->isDebug()) {
             return $this->trans('error.internal');
         }
 
         return $e->getMessage();
     }
-
 
     private function debugDetails(\Throwable $e): array
     {

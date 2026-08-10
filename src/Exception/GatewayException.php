@@ -11,12 +11,11 @@ class GatewayException extends \RuntimeException
 {
     public function __construct(
         private readonly string $gatewayName,
-        string                  $message,
-        private readonly ?int   $gatewayCode = null,
-        private readonly array  $context = [],
-        ?\Throwable             $previous = null,
-    )
-    {
+        string $message,
+        private readonly ?int $gatewayCode = null,
+        private readonly array $context = [],
+        ?\Throwable $previous = null,
+    ) {
         parent::__construct($message, 0, $previous);
     }
 
@@ -24,20 +23,19 @@ class GatewayException extends \RuntimeException
     {
         return new self(
             gatewayName: $gatewayName,
-            message: sprintf('[%s] Gateway misconfigured: %s', $gatewayName, $detail),
+            message: \sprintf('[%s] Gateway misconfigured: %s', $gatewayName, $detail),
         );
     }
 
     public static function httpError(
-        string      $gatewayName,
-        int         $httpStatus,
-        string      $responseBody,
+        string $gatewayName,
+        int $httpStatus,
+        string $responseBody,
         ?\Throwable $previous = null,
-    ): self
-    {
+    ): self {
         return new self(
             gatewayName: $gatewayName,
-            message: sprintf('[%s] HTTP error %d from gateway.', $gatewayName, $httpStatus),
+            message: \sprintf('[%s] HTTP error %d from gateway.', $gatewayName, $httpStatus),
             gatewayCode: $httpStatus,
             context: ['response_body' => $responseBody],
             previous: $previous,
@@ -47,12 +45,11 @@ class GatewayException extends \RuntimeException
     public static function unexpectedResponse(
         string $gatewayName,
         string $detail,
-        array  $rawResponse = [],
-    ): self
-    {
+        array $rawResponse = [],
+    ): self {
         return new self(
             gatewayName: $gatewayName,
-            message: sprintf('[%s] Unexpected response: %s', $gatewayName, $detail),
+            message: \sprintf('[%s] Unexpected response: %s', $gatewayName, $detail),
             context: ['raw_response' => $rawResponse],
         );
     }
@@ -61,7 +58,7 @@ class GatewayException extends \RuntimeException
     {
         return new self(
             gatewayName: $gatewayName,
-            message: sprintf('[%s] Network error: %s', $gatewayName, $cause->getMessage()),
+            message: \sprintf('[%s] Network error: %s', $gatewayName, $cause->getMessage()),
             previous: $cause,
         );
     }
@@ -69,13 +66,12 @@ class GatewayException extends \RuntimeException
     public static function declined(
         string $gatewayName,
         string $reason,
-        ?int   $gatewayCode = null,
-        array  $context = [],
-    ): self
-    {
+        ?int $gatewayCode = null,
+        array $context = [],
+    ): self {
         return new self(
             gatewayName: $gatewayName,
-            message: sprintf('[%s] Payment declined: %s', $gatewayName, $reason),
+            message: \sprintf('[%s] Payment declined: %s', $gatewayName, $reason),
             gatewayCode: $gatewayCode,
             context: $context,
         );

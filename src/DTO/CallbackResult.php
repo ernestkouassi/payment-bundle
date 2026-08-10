@@ -23,9 +23,7 @@ final readonly class CallbackResult
         public ?string $errorMessage = null,
         /** Raw payload for audit / log */
         public array $rawPayload = [],
-    )
-    {
-    }
+    ) {}
 
     public function isSuccessful(): bool
     {

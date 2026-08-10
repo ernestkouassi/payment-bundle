@@ -24,6 +24,7 @@ use Symfony\Component\HttpFoundation\Request;
 final class CentralBillGatewayTest extends TestCase
 {
     private CentralBillConfig $config;
+
     private CentralBillGateway $gateway;
 
     protected function setUp(): void
@@ -40,53 +41,53 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_the_correct_name(): void
+    public function itReturnsTheCorrectName(): void
     {
         $this->assertSame('centralbill', $this->gateway->getName());
     }
 
     #[Test]
-    public function it_is_configured_when_credentials_are_present(): void
+    public function itIsConfiguredWhenCredentialsArePresent(): void
     {
         $this->assertTrue($this->gateway->isConfigured());
     }
 
     #[Test]
-    public function it_is_not_configured_when_application_id_is_empty(): void
+    public function itIsNotConfiguredWhenApplicationIdIsEmpty(): void
     {
-        $gateway = new CentralBillGateway(new CentralBillConfig('', 'secret'));
+        $gateway = new CentralBillGateway(new CentralBillConfig('', 'secret', 'https://pay.example.com/'));
         $this->assertFalse($gateway->isConfigured());
     }
 
     #[Test]
-    public function it_is_not_configured_when_secret_is_empty(): void
+    public function itIsNotConfiguredWhenSecretIsEmpty(): void
     {
-        $gateway = new CentralBillGateway(new CentralBillConfig('id', ''));
+        $gateway = new CentralBillGateway(new CentralBillConfig('id', '', 'https://pay.example.com/'));
         $this->assertFalse($gateway->isConfigured());
     }
 
     #[Test]
-    public function it_throws_when_not_configured_on_initiate(): void
+    public function itThrowsWhenNotConfiguredOnInitiate(): void
     {
         $this->expectException(GatewayException::class);
         $this->expectExceptionMessage('misconfigured');
 
-        $gateway = new CentralBillGateway(new CentralBillConfig('', ''));
+        $gateway = new CentralBillGateway(new CentralBillConfig('', '', 'https://pay.example.com/'));
         $gateway->initiate($this->makeRequest());
     }
 
     #[Test]
-    public function it_returns_a_redirect_response_on_initiate(): void
+    public function itReturnsARedirectResponseOnInitiate(): void
     {
         $response = $this->gateway->initiate($this->makeRequest());
 
         $this->assertSame(PaymentStatus::INITIATED, $response->status);
         $this->assertTrue($response->requiresRedirect());
-        $this->assertStringStartsWith('https://pay.sandbox.centralbill.app/?', $response->redirectUrl);
+        $this->assertStringStartsWith('https://webpay.example.com/webpay/?', $response->redirectUrl);
     }
 
     #[Test]
-    public function it_includes_required_params_in_redirect_url(): void
+    public function itIncludesRequiredParamsInRedirectUrl(): void
     {
         $response = $this->gateway->initiate($this->makeRequest());
 
@@ -97,7 +98,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_uses_production_url_when_sandbox_is_false(): void
+    public function itUsesProductionUrlWhenSandboxIsFalse(): void
     {
         $config = new CentralBillConfig('id', 'secret', webPayBaseUrl: 'https://pay.centralbill.app');
         $gateway = new CentralBillGateway($config);
@@ -108,7 +109,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_success_on_completed_ipn(): void
+    public function itReturnsSuccessOnCompletedIpn(): void
     {
         $payload = $this->makeCallbackPayload($this->makeIpnBody('COMPLETED'));
         $result = $this->gateway->handle($payload);
@@ -122,7 +123,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_failed_on_refused_ipn(): void
+    public function itReturnsFailedOnRefusedIpn(): void
     {
         $payload = $this->makeCallbackPayload($this->makeIpnBody('REFUSED'));
         $result = $this->gateway->handle($payload);
@@ -133,7 +134,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_cancelled_on_canceled_ipn(): void
+    public function itReturnsCancelledOnCanceledIpn(): void
     {
         $payload = $this->makeCallbackPayload($this->makeIpnBody('CANCELED'));
         $result = $this->gateway->handle($payload);
@@ -142,7 +143,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_on_invalid_json_body(): void
+    public function itThrowsOnInvalidJsonBody(): void
     {
         $this->expectException(InvalidCallbackException::class);
         $this->expectExceptionMessage('malformed payload');
@@ -152,7 +153,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_on_missing_transaction_id(): void
+    public function itThrowsOnMissingTransactionId(): void
     {
         $this->expectException(InvalidCallbackException::class);
 
@@ -163,7 +164,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_on_missing_result_status(): void
+    public function itThrowsOnMissingResultStatus(): void
     {
         $this->expectException(InvalidCallbackException::class);
 
@@ -174,7 +175,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_throws_on_missing_invoice_id(): void
+    public function itThrowsOnMissingInvoiceId(): void
     {
         $this->expectException(InvalidCallbackException::class);
 
@@ -185,7 +186,7 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
-    public function it_returns_pending_for_get_transaction_status(): void
+    public function itReturnsPendingForGetTransactionStatus(): void
     {
         $this->assertSame(PaymentStatus::PENDING, $this->gateway->getTransactionStatus('tx-123'));
     }
@@ -197,6 +198,7 @@ final class CentralBillGatewayTest extends TestCase
             currency: Currency::XOF,
             invoiceId: 'ORDER-42',
             customerId: 'client@example.com',
+            customerName: 'John Doe',
             invoiceIssuedAt: new \DateTime(),
         );
     }

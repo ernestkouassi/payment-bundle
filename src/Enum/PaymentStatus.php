@@ -19,7 +19,7 @@ enum PaymentStatus: string
 
     public function isFinal(): bool
     {
-        return in_array($this, [
+        return \in_array($this, [
             self::SUCCESS,
             self::FAILED,
             self::CANCELLED,
@@ -30,6 +30,6 @@ enum PaymentStatus: string
 
     public function isSuccessful(): bool
     {
-        return $this === self::SUCCESS;
+        return self::SUCCESS === $this;
     }
 }

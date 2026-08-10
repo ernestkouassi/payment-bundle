@@ -1,0 +1,27 @@
+includes:
+    - vendor/phpstan/phpstan/conf/bleedingEdge.neon
+
+parameters:
+    level: 8
+
+    paths:
+        - src
+
+    # Exclude generated files and the vendor folder
+    excludePaths:
+        - vendor
+
+    # Enable strict rules
+    checkMissingIterableValueType: true
+    checkGenericClassInNonGenericObjectType: true
+    checkUninitializedProperties: true
+
+    # Ignoring known false positives
+    ignoreErrors:
+        -
+            message: '#Call to an undefined method Symfony\\Contracts\\Service\\ServiceProviderInterface::getProvidedServices\(\)#'
+            path: src/Registry/PaymentGatewayRegistry.php
+
+    # Reporting parameters
+    reportUnmatchedIgnoredErrors: true
+    treatPhpDocTypesAsCertain: false

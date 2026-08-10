@@ -66,9 +66,9 @@ final class E2KPaymentBundle extends AbstractBundle
             'e2k_payment.registry',
             (new Definition(PaymentGatewayRegistry::class))
                 ->setArgument(0, new ServiceLocatorArgument(
-                    new TaggedIteratorArgument('e2k_payment.gateway', null, 'getName')
+                    new TaggedIteratorArgument('e2k_payment.gateway', null, 'getName'),
                 ))
-                ->setPublic(false)
+                ->setPublic(false),
         );
 
         $container->setDefinition(
@@ -78,7 +78,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     new Reference('e2k_payment.registry'),
                     $config['default_gateway'],
                 ])
-                ->setPublic(true)
+                ->setPublic(true),
         );
 
         $container
@@ -98,7 +98,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     'event'    => 'kernel.exception',
                     'priority' => 10,
                 ])
-                ->setPublic(false)
+                ->setPublic(false),
         );
 
         if ($config['gateways']['centralbill']['enabled'] ?? false) {
@@ -124,7 +124,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['callback_url'],
                     $config['redirect_url'],
                 ])
-                ->setPublic(false)
+                ->setPublic(false),
         );
 
         $container->setDefinition(
@@ -132,7 +132,7 @@ final class E2KPaymentBundle extends AbstractBundle
             (new Definition(CentralBillGateway::class))
                 ->setArgument(0, new Reference('e2k_payment.gateway.centralbill.config'))
                 ->addTag('e2k_payment.gateway')
-                ->setPublic(false)
+                ->setPublic(false),
         );
     }
 }

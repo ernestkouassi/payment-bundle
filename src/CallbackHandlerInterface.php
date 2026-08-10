@@ -16,7 +16,7 @@ interface CallbackHandlerInterface
     /**
      * Validates the signature/authenticity of the callback.
      *
-     * @throws InvalidCallbackException If the signature is invalid.
+     * @throws InvalidCallbackException if the signature is invalid
      */
     public function validateSignature(CallbackPayload $payload): void;
 

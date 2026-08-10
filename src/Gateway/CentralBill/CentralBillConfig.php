@@ -10,12 +10,10 @@ namespace E2K\PaymentBundle\Gateway\CentralBill;
 final readonly class CentralBillConfig
 {
     public function __construct(
-        public string  $applicationId,
-        public string  $applicationSecret,
-        public string  $webPayBaseUrl,
+        public string $applicationId,
+        public string $applicationSecret,
+        public string $webPayBaseUrl,
         public ?string $defaultCallbackUrl = null,
         public ?string $defaultRedirectUrl = null,
-    )
-    {
-    }
+    ) {}
 }

@@ -3,7 +3,7 @@
   "description": "Symfony payment gateway abstraction bundle (CentralBill, extensible).",
   "type": "symfony-bundle",
   "license": "MIT",
-  "keywords" : [
+  "keywords": [
     "payment",
     "gateway",
     "centralbill",
@@ -26,6 +26,18 @@
       "E2K\\PaymentBundle\\Tests\\": "tests"
     }
   },
+  "scripts": {
+    "test": "phpunit --no-coverage",
+    "test:cov": "phpunit --coverage-html=var/coverage",
+    "stan": "phpstan analyse --ansi",
+    "cs": "php-cs-fixer fix --dry-run --diff --ansi",
+    "cs:fix": "php-cs-fixer fix --ansi",
+    "qa": [
+      "@test",
+      "@stan",
+      "@cs"
+    ]
+  },
   "extra": {
     "symfony": {
       "require": "^6.4 || ^7.4",
@@ -41,13 +53,19 @@
     "psr/log": "^3.0"
   },
   "require-dev": {
-    "phpstan/phpstan": "^1.10",
+    "friendsofphp/php-cs-fixer": "^3.95",
+    "phpstan/phpstan": "^2.2",
     "phpunit/phpunit": "^11.0",
     "symfony/framework-bundle": "^6.4 || ^7.4",
     "symfony/phpunit-bridge": "^7.4",
     "symfony/translation": "^8.1"
   },
   "config": {
-    "sort-packages": true
-  }
+    "sort-packages": true,
+    "allow-plugins": {
+      "phpstan/extension-installer": true
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
 }

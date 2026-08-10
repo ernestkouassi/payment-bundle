@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace E2K\PaymentBundle\Tests\EventListener;
@@ -16,21 +17,38 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
+/**
+ * @author Ernest KOUASSI <ernestkouassi02@gmail.com>
+ */
 #[CoversClass(PaymentExceptionListener::class)]
 final class PaymentExceptionListenerTest extends TestCase
 {
-    private KernelInterface          $kernel;
+    private KernelInterface $kernel;
+
+    private TranslatorInterface $translator;
+
     private PaymentExceptionListener $listener;
 
     protected function setUp(): void
     {
-        $this->kernel   = $this->createMock(KernelInterface::class);
-        $this->listener = new PaymentExceptionListener(new NullLogger(), $this->kernel);
+        $this->kernel = $this->createMock(KernelInterface::class);
+        $this->translator = $this->createMock(TranslatorInterface::class);
+
+        $this->translator
+            ->method('trans')
+            ->willReturnCallback(static fn(string $key) => $key);
+
+        $this->listener = new PaymentExceptionListener(
+            new NullLogger(),
+            $this->kernel,
+            $this->translator,
+        );
     }
 
     #[Test]
-    public function it_ignores_exceptions_outside_payment_routes(): void
+    public function itIgnoresExceptionsOutsidePaymentRoutes(): void
     {
         $event = $this->makeEvent(new \RuntimeException('Other'), '/api/users');
 
@@ -40,7 +58,7 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_ignores_non_payment_exceptions_on_payment_routes(): void
+    public function itIgnoresNonPaymentExceptionsOnPaymentRoutes(): void
     {
         $event = $this->makeEvent(new \RuntimeException('Other'), '/payments/initiate');
 
@@ -50,9 +68,9 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_handles_gateway_declined_exception(): void
+    public function itHandlesGatewayDeclinedException(): void
     {
-        $e     = GatewayException::declined('centralbill', 'insufficient funds');
+        $e = GatewayException::declined('centralbill', 'insufficient funds');
         $event = $this->makeEvent($e, '/payments/initiate');
 
         $this->listener->onKernelException($event);
@@ -63,9 +81,9 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_handles_gateway_http_error(): void
+    public function itHandlesGatewayHttpError(): void
     {
-        $e     = GatewayException::httpError('centralbill', 503, 'Service Unavailable');
+        $e = GatewayException::httpError('centralbill', 503, 'Service Unavailable');
         $event = $this->makeEvent($e, '/payments/initiate');
 
         $this->listener->onKernelException($event);
@@ -75,9 +93,9 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_handles_gateway_network_error(): void
+    public function itHandlesGatewayNetworkError(): void
     {
-        $e     = GatewayException::networkError('centralbill', new \RuntimeException('timeout'));
+        $e = GatewayException::networkError('centralbill', new \RuntimeException('timeout'));
         $event = $this->makeEvent($e, '/payments/initiate');
 
         $this->listener->onKernelException($event);
@@ -86,9 +104,9 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_handles_invalid_signature_with_400(): void
+    public function itHandlesInvalidSignatureWith400(): void
     {
-        $e     = InvalidCallbackException::invalidSignature('HMAC mismatch');
+        $e = InvalidCallbackException::invalidSignature('HMAC mismatch');
         $event = $this->makeEvent($e, '/payments/callback/centralbill');
 
         $this->listener->onKernelException($event);
@@ -98,9 +116,9 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_handles_replay_detected_with_200(): void
+    public function itHandlesReplayDetectedWith200(): void
     {
-        $e     = InvalidCallbackException::replayDetected('tx-123');
+        $e = InvalidCallbackException::replayDetected('tx-123');
         $event = $this->makeEvent($e, '/payments/callback/centralbill');
 
         $this->listener->onKernelException($event);
@@ -110,9 +128,9 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_handles_missing_signature_with_400(): void
+    public function itHandlesMissingSignatureWith400(): void
     {
-        $e     = InvalidCallbackException::missingSignature();
+        $e = InvalidCallbackException::missingSignature();
         $event = $this->makeEvent($e, '/payments/callback/centralbill');
 
         $this->listener->onKernelException($event);
@@ -121,9 +139,9 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_handles_gateway_not_found_with_500(): void
+    public function itHandlesGatewayNotFoundWith500(): void
     {
-        $e     = GatewayNotFoundException::forName('unknown', ['centralbill']);
+        $e = GatewayNotFoundException::forName('unknown', ['centralbill']);
         $event = $this->makeEvent($e, '/payments/initiate');
 
         $this->listener->onKernelException($event);
@@ -133,26 +151,67 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
-    public function it_masks_5xx_message_in_production(): void
+    public function itMasks5xxMessageInProduction(): void
     {
         $this->kernel->method('isDebug')->willReturn(false);
 
-        $e     = GatewayException::configurationError('centralbill', 'secret is empty');
-        $event = $this->makeEvent($e, '/payments/initiate');
+        $translator = $this->createMock(TranslatorInterface::class);
+        $translator
+            ->expects($this->once())
+            ->method('trans')
+            ->with('error.internal', [], 'E2KPaymentBundle')
+            ->willReturn('An error occurred while processing the payment. Please try again.');
 
-        $this->listener->onKernelException($event);
+        $listener = new PaymentExceptionListener(new NullLogger(), $this->kernel, $translator);
+        $event = $this->makeEvent(
+            GatewayException::configurationError('centralbill', 'secret is empty'),
+            '/payments/initiate',
+        );
+
+        $listener->onKernelException($event);
+
+        $this->assertTrue($event->hasResponse());
 
         $body = json_decode($event->getResponse()->getContent(), true);
-        $this->assertStringContainsString('error occurred', $body['error']['message']);
+        $this->assertSame(
+            'An error occurred while processing the payment. Please try again.',
+            $body['error']['message'],
+        );
         $this->assertArrayNotHasKey('details', $body['error']);
     }
 
     #[Test]
-    public function it_shows_details_in_debug_mode(): void
+    public function itCallsTranslatorForServiceUnavailable(): void
+    {
+        $translator = $this->createMock(TranslatorInterface::class);
+        $translator
+            ->expects($this->once())
+            ->method('trans')
+            ->with('error.service_unavailable', [], 'E2KPaymentBundle')
+            ->willReturn('Le service de paiement est temporairement indisponible.');
+
+        $listener = new PaymentExceptionListener(new NullLogger(), $this->kernel, $translator);
+
+        $event = $this->makeEvent(
+            GatewayNotFoundException::forName('unknown'),
+            '/payments/initiate',
+        );
+
+        $listener->onKernelException($event);
+
+        $body = json_decode($event->getResponse()->getContent(), true);
+        $this->assertSame(
+            'Le service de paiement est temporairement indisponible.',
+            $body['error']['message'],
+        );
+    }
+
+    #[Test]
+    public function itShowsDetailsInDebugMode(): void
     {
         $this->kernel->method('isDebug')->willReturn(true);
 
-        $e     = GatewayException::declined('centralbill', 'refused');
+        $e = GatewayException::declined('centralbill', 'refused');
         $event = $this->makeEvent($e, '/payments/initiate');
 
         $this->listener->onKernelException($event);
@@ -165,7 +224,7 @@ final class PaymentExceptionListenerTest extends TestCase
     private function makeEvent(\Throwable $exception, string $path): ExceptionEvent
     {
         $httpKernel = $this->createMock(HttpKernelInterface::class);
-        $request    = Request::create($path);
+        $request = Request::create($path);
 
         return new ExceptionEvent($httpKernel, $request, HttpKernelInterface::MAIN_REQUEST, $exception);
     }

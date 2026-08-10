@@ -28,13 +28,12 @@ final class ApiErrorResponse extends JsonResponse
         int $httpStatus,
         array $details = [],
         bool $debug = false,
-    )
-    {
+    ) {
         $body = [
             'error' => array_filter([
                 'code' => $code->value,
                 'message' => $message,
-                'details' => $debug && !empty($details) ? $details : null,
+                'details' => $debug && ! empty($details) ? $details : null,
             ]),
         ];
 

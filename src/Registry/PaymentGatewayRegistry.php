@@ -12,7 +12,7 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
 /**
  * @author Ernest KOUASSI <ernestkouassi02@gmail.com>
  */
-final readonly class PaymentGatewayRegistry
+readonly class PaymentGatewayRegistry
 {
     public function __construct(
         /**
@@ -29,11 +29,11 @@ final readonly class PaymentGatewayRegistry
 
     public function get(string $name): PaymentGatewayInterface
     {
-        if (!$this->locator->has($name)) {
+        if (! $this->locator->has($name)) {
             throw GatewayNotFoundException::forName($name, $this->getAvailableNames());
         }
 
-        /** @var PaymentGatewayInterface */
+        /* @var PaymentGatewayInterface */
         return $this->locator->get($name);
     }
 

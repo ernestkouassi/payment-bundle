@@ -12,12 +12,19 @@ use E2K\PaymentBundle\Enum\PaymentStatus;
 final class CentralBillStatus
 {
     public const PENDING = 'PENDING';
+
     public const PROCESSING = 'PROCESSING';
+
     public const COMPLETED = 'COMPLETED';
+
     public const CANCELED = 'CANCELED';
+
     public const REFUSED = 'REFUSED';
+
     public const FAILED = 'FAILED';
+
     public const REVERSED = 'REVERSED';
+
     public const NEEDS_MERCHANT_VALIDATION = 'NEEDS_MERCHANT_VALIDATION';
 
     public static function toPaymentStatus(string $centralBillStatus): PaymentStatus

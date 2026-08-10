@@ -18,7 +18,9 @@ use PHPUnit\Framework\TestCase;
 final class CentralBillSignatureVerifierTest extends TestCase
 {
     private const SECRET = 'test-secret';
+
     private const METHOD = 'post';
+
     private const URI = '/payments/callback/centralbill';
 
     private CentralBillSignatureVerifier $verifier;
@@ -29,17 +31,17 @@ final class CentralBillSignatureVerifierTest extends TestCase
     }
 
     #[Test]
-    public function it_accepts_a_valid_hmac_signature(): void
+    public function itAcceptsAValidHmacSignature(): void
     {
         $date = 'Thu, 01 Dec 2022 19:08:22 +0000';
         $contentType = 'application/json';
         $digest = 'SHA256=abc123';
 
         $signingString = implode("\n", [
-            sprintf('(request-target): %s %s', self::METHOD, self::URI),
-            sprintf('content-type: %s', $contentType),
-            sprintf('date: %s', $date),
-            sprintf('digest: %s', $digest),
+            \sprintf('(request-target): %s %s', self::METHOD, self::URI),
+            \sprintf('content-type: %s', $contentType),
+            \sprintf('date: %s', $date),
+            \sprintf('digest: %s', $digest),
         ]);
 
         $sig = base64_encode(hash_hmac('sha256', $signingString, self::SECRET, true));
@@ -48,7 +50,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
             'content-type' => $contentType,
             'date' => $date,
             'digest' => $digest,
-            'signature' => sprintf(
+            'signature' => \sprintf(
                 'keyId="app-id",algorithm="hmac-sha256",headers="(request-target) content-type date digest",signature="%s"',
                 $sig,
             ),
@@ -60,7 +62,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_missing_signature_header(): void
+    public function itRejectsMissingSignatureHeader(): void
     {
         $this->expectException(InvalidCallbackException::class);
         $this->expectExceptionMessage('Signature header is absent');
@@ -69,7 +71,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_unsupported_algorithm(): void
+    public function itRejectsUnsupportedAlgorithm(): void
     {
         $this->expectException(InvalidCallbackException::class);
 
@@ -82,7 +84,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_missing_signature_component(): void
+    public function itRejectsMissingSignatureComponent(): void
     {
         $this->expectException(InvalidCallbackException::class);
         $headers = [
@@ -94,7 +96,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_invalid_hmac(): void
+    public function itRejectsInvalidHmac(): void
     {
         $this->expectException(InvalidCallbackException::class);
 
@@ -107,7 +109,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
     }
 
     #[Test]
-    public function it_rejects_callback_with_missing_referenced_header(): void
+    public function itRejectsCallbackWithMissingReferencedHeader(): void
     {
         $this->expectException(InvalidCallbackException::class);
 
@@ -116,7 +118,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
         // 'content-type' est listé dans headers mais absent des en-têtes HTTP
         $headers = [
             'date' => 'some-date',
-            'signature' => sprintf(
+            'signature' => \sprintf(
                 'keyId="id",algorithm="hmac-sha256",headers="date content-type",signature="%s"',
                 $sig,
             ),
@@ -126,7 +128,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
     }
 
     #[Test]
-    public function it_has_invalid_signature_reason_on_hmac_mismatch(): void
+    public function itHasInvalidSignatureReasonOnHmacMismatch(): void
     {
         $headers = [
             'date' => 'Thu, 01 Dec 2022 19:08:22 +0000',
