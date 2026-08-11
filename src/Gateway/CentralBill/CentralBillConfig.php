@@ -15,5 +15,6 @@ final readonly class CentralBillConfig
         public string $webPayBaseUrl,
         public ?string $defaultCallbackUrl = null,
         public ?string $defaultRedirectUrl = null,
-    ) {}
+    ) {
+    }
 }

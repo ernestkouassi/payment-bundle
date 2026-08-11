@@ -74,7 +74,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
             'signature' => $signature,
             'callbackUrl' => $request->callbackUrl ?? $this->config->defaultCallbackUrl,
             'redirectUrl' => $request->returnUrl ?? $this->config->defaultRedirectUrl,
-        ], static fn($v) => null !== $v && '' !== $v);
+        ], static fn ($v) => null !== $v && '' !== $v);
 
         $redirectUrl = \sprintf(
             '%s/?%s',
@@ -162,7 +162,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
     private function generatePaymentSignature(
         string $invoiceId,
         string $customerId,
-        int $amount,
+        string $amount,
         string $currency,
     ): string {
         return hash('sha256', \sprintf(

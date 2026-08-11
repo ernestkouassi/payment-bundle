@@ -25,7 +25,8 @@ readonly class PaymentGatewayRegistry
             defaultIndexMethod: 'getName',
         )]
         private ServiceProviderInterface $locator,
-    ) {}
+    ) {
+    }
 
     public function get(string $name): PaymentGatewayInterface
     {

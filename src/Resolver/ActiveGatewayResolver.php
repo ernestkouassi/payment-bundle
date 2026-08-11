@@ -17,7 +17,8 @@ final readonly class ActiveGatewayResolver
         private PaymentGatewayRegistry $registry,
         /** Inject from e2k payment.yaml: e2k payment.default gateway */
         private string $defaultGatewayName,
-    ) {}
+    ) {
+    }
 
     /**
      * Returns the active gateway. If $name is provided, it uses that gateway; otherwise, the default gateway.

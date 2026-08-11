@@ -12,7 +12,7 @@ class GatewayNotFoundException extends \InvalidArgumentException
     public function __construct(
         private readonly string $requestedName,
         private readonly array $availableGateways = [],
-        ?\Throwable $previous          = null,
+        ?\Throwable $previous = null,
     ) {
         parent::__construct($this->buildMessage(), 0, $previous);
     }

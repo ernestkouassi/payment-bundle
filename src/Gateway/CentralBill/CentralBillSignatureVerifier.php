@@ -17,7 +17,8 @@ final readonly class CentralBillSignatureVerifier
 {
     public function __construct(
         private string $applicationSecret,
-    ) {}
+    ) {
+    }
 
     /**
      * @param array<string, string|string[]> $headers    HTTP headers (will be normalized to lowercase)
@@ -29,7 +30,7 @@ final readonly class CentralBillSignatureVerifier
     public function verify(array $headers, string $method, string $requestUri): void
     {
         $headers = array_map(
-            static fn($v) => \is_array($v) ? implode(', ', $v) : $v,
+            static fn ($v) => \is_array($v) ? implode(', ', $v) : $v,
             array_change_key_case($headers, \CASE_LOWER),
         );
 

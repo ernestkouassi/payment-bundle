@@ -23,7 +23,8 @@ final readonly class PaymentResponse
         public ?string $gatewayToken = null,
         /** Raw data returned by the gateway */
         public array $rawResponse = [],
-    ) {}
+    ) {
+    }
 
     public function requiresRedirect(): bool
     {

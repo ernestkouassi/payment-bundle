@@ -97,7 +97,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['payment_route_prefix'],
                 ])
                 ->addTag('kernel.event_listener', [
-                    'event'    => 'kernel.exception',
+                    'event' => 'kernel.exception',
                     'priority' => 10,
                 ])
                 ->setPublic(false),
@@ -115,7 +115,6 @@ final class E2KPaymentBundle extends AbstractBundle
 
     private function loadCentralBill(array $config, ContainerBuilder $container): void
     {
-
         $container->setDefinition(
             'e2k_payment.gateway.centralbill.config',
             (new Definition(CentralBillConfig::class))

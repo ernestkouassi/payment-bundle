@@ -13,14 +13,14 @@ final readonly class PaymentRequest
 {
     public function __construct(
         /** Amount in whole units (e.g., 5000 for 5000 XOF) */
-        public int $amount,
+        public string $amount,
         public Currency $currency,
         /** Internal unique reference for the order / transaction */
         public string $invoiceId,
         /** Email of the payer */
         public string $customerId,
-        public ?string $customerName,
         public \DateTimeInterface $invoiceIssuedAt,
+        public ?string $customerName = null,
         public ?\DateTimeInterface $invoicedDueDate = null,
         public ?\DateTimeInterface $invoiceExpiresAt = null,
         /** Redirect URL after payment (front-end) */
@@ -30,5 +30,6 @@ final readonly class PaymentRequest
         /** Free metadata transmitted to the gateway  */
         public array $metadata = [],
         public ?string $description = null,
-    ) {}
+    ) {
+    }
 }

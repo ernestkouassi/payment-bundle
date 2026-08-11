@@ -194,12 +194,12 @@ final class CentralBillGatewayTest extends TestCase
     private function makeRequest(): PaymentRequest
     {
         return new PaymentRequest(
-            amount: 5000,
+            amount: '5000',
             currency: Currency::XOF,
             invoiceId: 'ORDER-42',
             customerId: 'client@example.com',
-            customerName: 'John Doe',
             invoiceIssuedAt: new \DateTime(),
+            customerName: 'John Doe',
         );
     }
 

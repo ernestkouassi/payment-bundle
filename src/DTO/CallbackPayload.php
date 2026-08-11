@@ -17,7 +17,8 @@ final readonly class CallbackPayload
         public Request $httpRequest,
         /** Name of the gateway resolved from the route */
         public ?string $gatewayName = null,
-    ) {}
+    ) {
+    }
 
     public function getBody(): string
     {

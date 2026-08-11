@@ -38,7 +38,7 @@ final class PaymentExceptionListenerTest extends TestCase
 
         $this->translator
             ->method('trans')
-            ->willReturnCallback(static fn(string $key) => $key);
+            ->willReturnCallback(static fn (string $key) => $key);
 
         $this->listener = new PaymentExceptionListener(
             new NullLogger(),

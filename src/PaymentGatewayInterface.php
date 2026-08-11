@@ -13,9 +13,7 @@ use E2K\PaymentBundle\Enum\PaymentStatus;
  *
  * The implementation of this interface is sufficient to automatically register the gateway in the registry (via registerForAutoconfiguration in the bundle).
  */
-interface PaymentGatewayInterface extends
-    PaymentInitiatorInterface,
-    CallbackHandlerInterface
+interface PaymentGatewayInterface extends PaymentInitiatorInterface, CallbackHandlerInterface
 {
     /**
      * Unique gateway identifier (snake_case). Used as a key in the ServiceLocator. Ex: 'centralbill', 'wave', 'orange_money'.

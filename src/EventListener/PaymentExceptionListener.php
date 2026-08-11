@@ -38,7 +38,8 @@ final class PaymentExceptionListener implements EventSubscriberInterface
         private readonly KernelInterface $kernel,
         private readonly TranslatorInterface $translator,
         private readonly ?string $paymentRoutePrefix = self::PAYMENT_ROUTE_PREFIX,
-    ) {}
+    ) {
+    }
 
     public static function getSubscribedEvents(): array
     {
