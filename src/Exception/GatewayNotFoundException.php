@@ -30,7 +30,7 @@ class GatewayNotFoundException extends \InvalidArgumentException
             previous: new \LogicException(
                 \sprintf(
                     'PAYMENT_DEFAULT_GATEWAY="%s" does not match any registered gateway. '
-                    . 'Check your e2k_payment.yaml or the services implementing PaymentGatewayInterface.',
+                    .'Check your e2k_payment.yaml or the services implementing PaymentGatewayInterface.',
                     $envValue,
                 ),
             ),
@@ -61,7 +61,7 @@ class GatewayNotFoundException extends \InvalidArgumentException
     {
         $msg = \sprintf('Payment gateway "%s" not found.', $this->requestedName);
 
-        if (! empty($this->availableGateways)) {
+        if (!empty($this->availableGateways)) {
             $msg .= \sprintf(' Available: [%s].', implode(', ', $this->availableGateways));
         } else {
             $msg .= ' No gateways registered — did you implement PaymentGatewayInterface?';

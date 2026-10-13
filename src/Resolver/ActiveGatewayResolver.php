@@ -31,7 +31,7 @@ final readonly class ActiveGatewayResolver
 
         $gateway = $this->registry->get($targetName);
 
-        if (! $gateway->isConfigured()) {
+        if (!$gateway->isConfigured()) {
             throw GatewayNotFoundException::notConfigured($targetName);
         }
 

@@ -30,7 +30,7 @@ readonly class PaymentGatewayRegistry
 
     public function get(string $name): PaymentGatewayInterface
     {
-        if (! $this->locator->has($name)) {
+        if (!$this->locator->has($name)) {
             throw GatewayNotFoundException::forName($name, $this->getAvailableNames());
         }
 

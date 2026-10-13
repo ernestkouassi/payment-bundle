@@ -53,7 +53,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
         $exception = $event->getThrowable();
         $request = $event->getRequest();
 
-        if (! str_starts_with($request->getPathInfo(), $this->paymentRoutePrefix)) {
+        if (!str_starts_with($request->getPathInfo(), $this->paymentRoutePrefix)) {
             return;
         }
 
@@ -166,7 +166,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
 
     private function safeMessage(\Throwable $e, int $httpStatus): string
     {
-        if ($httpStatus >= 500 && ! $this->isDebug()) {
+        if ($httpStatus >= 500 && !$this->isDebug()) {
             return 'An error occurred while processing the payment. Please try again.';
         }
 
@@ -179,7 +179,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
      */
     private function clientMessage(\Throwable $e, int $httpStatus): string
     {
-        if ($httpStatus >= 500 && ! $this->kernel->isDebug()) {
+        if ($httpStatus >= 500 && !$this->kernel->isDebug()) {
             return $this->trans('error.internal');
         }
 
