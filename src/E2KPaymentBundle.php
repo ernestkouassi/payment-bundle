@@ -116,6 +116,10 @@ final class E2KPaymentBundle extends AbstractBundle
         if ($config['gateways']['centralbill']['enabled'] ?? false) {
             $this->loadCentralBill($config['gateways']['centralbill'], $container);
         }
+
+        if ($config['gateways']['paystack']['enabled'] ?? false) {
+            $this->loadPaystack($config['gateways']['paystack'], $container);
+        }
     }
 
     public function getPath(): string
@@ -157,7 +161,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['api_base_url'],
                     $config['callback_url'],
                 ])
-                ->setPrivate(true)
+                ->setPrivate(true),
         );
 
         $builder->setDefinition(
@@ -168,7 +172,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     new Reference('http_client'),
                 ])
                 ->addTag('e2k_payment.gateway')
-                ->setPrivate(true)
+                ->setPrivate(true),
         );
     }
 }

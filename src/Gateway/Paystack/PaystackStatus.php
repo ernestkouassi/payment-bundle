@@ -14,9 +14,13 @@ use E2K\PaymentBundle\Enum\PaymentStatus;
 final class PaystackStatus
 {
     public const SUCCESS = 'success';
+
     public const FAILED = 'failed';
+
     public const ABANDONED = 'abandoned';
+
     public const PENDING = 'pending';
+
     public const ONGOING = 'ongoing';
 
     /**
@@ -26,8 +30,6 @@ final class PaystackStatus
 
     /**
      * Converts a Paystack transaction status into a normalized PaymentStatus.
-     *
-     * @param string $paystackStatus
      */
     public static function toPaymentStatus(string $paystackStatus): PaymentStatus
     {

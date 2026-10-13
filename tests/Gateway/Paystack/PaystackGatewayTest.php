@@ -28,7 +28,9 @@ final class PaystackGatewayTest extends TestCase
     private const SECRET = 'sk_test_abc123';
 
     private PaystackConfig $config;
+
     private HttpClientInterface $httpClient;
+
     private PaystackGateway $gateway;
 
     protected function setUp(): void
@@ -128,7 +130,7 @@ final class PaystackGatewayTest extends TestCase
     public function itReturnsSuccessOnChargeSuccessEvent(): void
     {
         $result = $this->gateway->handle(
-            $this->makeCallbackPayload($this->makeWebhookBody('charge.success', 'success'))
+            $this->makeCallbackPayload($this->makeWebhookBody('charge.success', 'success')),
         );
 
         $this->assertTrue($result->isSuccessful());
@@ -143,7 +145,7 @@ final class PaystackGatewayTest extends TestCase
     public function itReturnsFailedOnNonChargeSuccessEvent(): void
     {
         $result = $this->gateway->handle(
-            $this->makeCallbackPayload($this->makeWebhookBody('charge.failed', 'failed'))
+            $this->makeCallbackPayload($this->makeWebhookBody('charge.failed', 'failed')),
         );
 
         $this->assertFalse($result->isSuccessful());
@@ -155,7 +157,7 @@ final class PaystackGatewayTest extends TestCase
     public function itReturnsCancelledOnAbandonedStatus(): void
     {
         $result = $this->gateway->handle(
-            $this->makeCallbackPayload($this->makeWebhookBody('charge.success', 'abandoned'))
+            $this->makeCallbackPayload($this->makeWebhookBody('charge.success', 'abandoned')),
         );
 
         $this->assertSame(PaymentStatus::CANCELLED, $result->status);

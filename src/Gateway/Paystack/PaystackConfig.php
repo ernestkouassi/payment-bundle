@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 
 namespace E2K\PaymentBundle\Gateway\Paystack;
@@ -8,16 +9,10 @@ namespace E2K\PaymentBundle\Gateway\Paystack;
  */
 final readonly class PaystackConfig
 {
-    /**
-     * @param string $secretKey
-     * @param string $apiBaseUrl
-     * @param string|null $defaultCallbackUrl
-     */
     public function __construct(
-        public string  $secretKey,
-        public string  $apiBaseUrl,
+        public string $secretKey,
+        public string $apiBaseUrl,
         public ?string $defaultCallbackUrl = null,
-    )
-    {
+    ) {
     }
 }

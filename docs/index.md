@@ -35,16 +35,20 @@ return [
 ```yaml
 # config/packages/e2k_payment.yaml
 e2k_payment:
-    default_gateway: '%env(PAYMENT_DEFAULT_GATEWAY)%'
-
-    gateways:
-        centralbill:
-            enabled:            true
-            application_id:     '%env(CENTRALBILL_APPLICATION_ID)%'
-            application_secret: '%env(CENTRALBILL_APPLICATION_SECRET)%'
-            sandbox:            '%env(bool:CENTRALBILL_SANDBOX)%'
-            callback_url:       '%env(CENTRALBILL_CALLBACK_URL)%'
-            redirect_url:       '%env(CENTRALBILL_REDIRECT_URL)%'
+  default_gateway: '%env(PAYMENT_DEFAULT_GATEWAY)%'
+  payment_route_prefix: '%env(PAYMENT_ROUTE_PREFIX)%'
+  gateways:
+    centralbill:
+      enabled: true
+      application_id: '%env(CENTRALBILL_APPLICATION_ID)%'
+      application_secret: '%env(CENTRALBILL_APPLICATION_SECRET)%'
+      web_pay_base_url: '%env(CENTRALBILL_WEB_PAY_BASE_URL)%'
+      callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'
+      redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'
+    paystack:
+      enabled: true
+      secret_key: '%env(PAYSTACK_SECRET_KEY)%'
+      callback_url: '%env(PAYSTACK_CALLBACK_URL)%'
 ```
 
 ```dotenv
@@ -55,6 +59,9 @@ CENTRALBILL_APPLICATION_SECRET=app!secret
 CENTRALBILL_SANDBOX=true
 CENTRALBILL_CALLBACK_URL=https://acme.net/payment/callback/centralbill
 CENTRALBILL_REDIRECT_URL=https://acme.net/payment/return
+
+PAYSTACK_SECRET_KEY=sk_live_xxxxxxxxxxxx
+PAYSTACK_CALLBACK_URL=https://acme.net/payment/callback/paystack
 ```
 
 ---
@@ -99,7 +106,7 @@ use E2K\PaymentBundle\DTO\CallbackPayload;
 #[Route('/payments/callback/{gateway}', methods: ['GET', 'POST'])]
 public function callback(Request $request, string $gateway): Response
 {
-    $gw      = $this->gatewayResolver->resolve($gateway);
+    $gw = $this->gatewayResolver->resolve($gateway);
     $payload = new CallbackPayload($request, $gateway);
 
     $gw->validateSignature($payload);   // throws InvalidCallbackException if invalid

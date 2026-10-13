@@ -16,7 +16,7 @@ use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Paystack payment gateway. Documentation: https://paystack.com/docs/payments/accept-payments/
+ * Paystack payment gateway. Documentation: https://paystack.com/docs/payments/accept-payments/.
  *
  * @author Ernest KOUASSI <ernestkouassi02@gmail.com>
  */
@@ -24,15 +24,10 @@ final class PaystackGateway implements PaymentGatewayInterface
 {
     private PaystackSignatureVerifier $signatureVerifier;
 
-    /**
-     * @param PaystackConfig $config
-     * @param HttpClientInterface $httpClient
-     */
     public function __construct(
-        private readonly PaystackConfig      $config,
+        private readonly PaystackConfig $config,
         private readonly HttpClientInterface $httpClient,
-    )
-    {
+    ) {
         $this->signatureVerifier = new PaystackSignatureVerifier($this->config->secretKey);
     }
 
@@ -49,7 +44,7 @@ final class PaystackGateway implements PaymentGatewayInterface
      */
     public function isConfigured(): bool
     {
-        return !empty($this->config->secretKey);
+        return ! empty($this->config->secretKey);
     }
 
     /**
@@ -61,7 +56,7 @@ final class PaystackGateway implements PaymentGatewayInterface
      */
     public function initiate(PaymentRequest $request): PaymentResponse
     {
-        if (!$this->isConfigured()) {
+        if (! $this->isConfigured()) {
             throw GatewayException::configurationError($this->getName(), 'secretKey is empty.');
         }
 
@@ -76,7 +71,7 @@ final class PaystackGateway implements PaymentGatewayInterface
                 'phone' => $request->customerPhone,
                 'description' => $request->description,
             ]),
-        ], static fn($v) => $v !== null && $v !== '' && $v !== []);
+        ], static fn ($v) => null !== $v && '' !== $v && [] !== $v);
 
         try {
             $response = $this->httpClient->request('POST', $this->config->apiBaseUrl . '/transaction/initialize', [
@@ -89,29 +84,20 @@ final class PaystackGateway implements PaymentGatewayInterface
 
             $statusCode = $response->getStatusCode();
             $data = $response->toArray(throw: false);
-
         } catch (TransportExceptionInterface $e) {
             throw GatewayException::networkError($this->getName(), $e);
         }
 
-        if ($statusCode !== 200 || !($data['status'] ?? false)) {
-            throw GatewayException::httpError(
-                $this->getName(),
-                $statusCode,
-                $data['message'] ?? 'Unknown error',
-            );
+        if (200 !== $statusCode || ! ($data['status'] ?? false)) {
+            throw GatewayException::httpError($this->getName(), $statusCode, $data['message'] ?? 'Unknown error');
         }
 
         $authUrl = $data['data']['authorization_url'] ?? null;
         $gatewayReference = $data['data']['reference'] ?? $request->reference;
         $accessCode = $data['data']['access_code'] ?? null;
 
-        if (!$authUrl) {
-            throw GatewayException::unexpectedResponse(
-                $this->getName(),
-                'Missing authorization_url in response.',
-                $data,
-            );
+        if (! $authUrl) {
+            throw GatewayException::unexpectedResponse($this->getName(), 'Missing authorization_url in response.', $data);
         }
 
         return new PaymentResponse(
@@ -150,18 +136,18 @@ final class PaystackGateway implements PaymentGatewayInterface
     {
         $body = json_decode($payload->getBody(), true);
 
-        if (!is_array($body)) {
+        if (! \is_array($body)) {
             throw InvalidCallbackException::malformedPayload('Invalid JSON body.');
         }
 
         $event = $body['event'] ?? null;
         $data = $body['data'] ?? null;
 
-        if (!$event) {
+        if (! $event) {
             throw InvalidCallbackException::missingField('event');
         }
 
-        if (!is_array($data)) {
+        if (! \is_array($data)) {
             throw InvalidCallbackException::missingField('data');
         }
 
@@ -170,23 +156,23 @@ final class PaystackGateway implements PaymentGatewayInterface
         $paystackStatus = $data['status'] ?? null;
         $amount = $data['amount'] ?? null;
 
-        if (!$reference) {
+        if (! $reference) {
             throw InvalidCallbackException::missingField('data.reference');
         }
-        if (!$paystackId) {
+        if (! $paystackId) {
             throw InvalidCallbackException::missingField('data.id');
         }
-        if (!$paystackStatus) {
+        if (! $paystackStatus) {
             throw InvalidCallbackException::missingField('data.status');
         }
 
-        $status = ($event === PaystackStatus::EVENT_CHARGE_SUCCESS)
+        $status = (PaystackStatus::EVENT_CHARGE_SUCCESS === $event)
             ? PaystackStatus::toPaymentStatus($paystackStatus)
             : PaymentStatus::FAILED;
 
         $errorMessage = null;
-        if (!$status->isSuccessful()) {
-            $errorMessage = sprintf(
+        if (! $status->isSuccessful()) {
+            $errorMessage = \sprintf(
                 'Paystack event "%s" with status "%s".',
                 $event,
                 $paystackStatus,
@@ -196,15 +182,15 @@ final class PaystackGateway implements PaymentGatewayInterface
         return new CallbackResult(
             status: $status,
             reference: $reference,
-            gatewayTransactionId: (string)$paystackId,
-            amount: isset($amount) ? (int)$amount : null,
+            gatewayTransactionId: (string) $paystackId,
+            amount: isset($amount) ? (int) $amount : null,
             errorMessage: $errorMessage,
             rawPayload: $body,
         );
     }
 
     /**
-     * Queries the Paystack API for the current status of a transaction. GET https://api.paystack.co/transaction/verify/:reference
+     * Queries the Paystack API for the current status of a transaction. GET https://api.paystack.co/transaction/verify/:reference.
      *
      * {@inheritdoc}
      *
@@ -224,12 +210,11 @@ final class PaystackGateway implements PaymentGatewayInterface
             );
 
             $data = $response->toArray(throw: false);
-
         } catch (TransportExceptionInterface $e) {
             throw GatewayException::networkError($this->getName(), $e);
         }
 
-        if (!($data['status'] ?? false)) {
+        if (! ($data['status'] ?? false)) {
             return PaymentStatus::FAILED;
         }
 
