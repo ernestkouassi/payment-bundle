@@ -53,6 +53,16 @@ final class E2KPaymentBundle extends AbstractBundle
                                 ->scalarNode('redirect_url')->defaultNull()->end()
                             ->end()
                         ->end()
+                        ->arrayNode('paystack')->canBeEnabled()
+                            ->children()
+                                ->scalarNode('secret_key')->isRequired()->cannotBeEmpty()
+                                ->end()
+                                ->scalarNode('api_base_url')->isRequired()->cannotBeEmpty()
+                                ->end()
+                                ->scalarNode('callback_url')->defaultNull()
+                                ->end()
+                            ->end()
+                        ->end()
                     ->end()
                 ->end()
             ->end();
@@ -134,6 +144,31 @@ final class E2KPaymentBundle extends AbstractBundle
                 ->setArgument(0, new Reference('e2k_payment.gateway.centralbill.config'))
                 ->addTag('e2k_payment.gateway')
                 ->setPublic(false),
+        );
+    }
+
+    private function loadPaystack(array $config, ContainerBuilder $builder): void
+    {
+        $builder->setDefinition(
+            'e2k_payment.gateway.paystack.config',
+            (new Definition(PaystackConfig::class))
+                ->setArguments([
+                    $config['secret_key'],
+                    $config['api_base_url'],
+                    $config['callback_url'],
+                ])
+                ->setPrivate(true)
+        );
+
+        $builder->setDefinition(
+            'e2k_payment.gateway.paystack',
+            (new Definition(PaystackGateway::class))
+                ->setArguments([
+                    new Reference('e2k_payment.gateway.paystack.config'),
+                    new Reference('http_client'),
+                ])
+                ->addTag('e2k_payment.gateway')
+                ->setPrivate(true)
         );
     }
 }

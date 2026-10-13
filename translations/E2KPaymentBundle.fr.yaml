@@ -19,3 +19,6 @@ callback:
   replay_detected: 'Notification de paiement déjà traitée.'
 payment:
   internal_error: 'Une erreur interne de paiement est survenue.'
+paystack:
+  charge_failed: 'Le paiement a échoué.'
+  abandoned: 'Le paiement a été abandonné par le client.'

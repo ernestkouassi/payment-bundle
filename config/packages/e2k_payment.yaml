@@ -1,12 +1,17 @@
 e2k_payment:
-    default_gateway: '%env(PAYMENT_DEFAULT_GATEWAY)%'
-    payment_route_prefix: '%env(PAYMENT_ROUTE_PREFIX)%'
+  default_gateway: '%env(PAYMENT_DEFAULT_GATEWAY)%'
+  payment_route_prefix: '%env(PAYMENT_ROUTE_PREFIX)%'
 
-    gateways:
-        centralbill:
-            enabled:            true
-            application_id:     '%env(CENTRALBILL_APPLICATION_ID)%'
-            application_secret: '%env(CENTRALBILL_APPLICATION_SECRET)%'
-            web_pay_baseUrl:    '%env(CENTRALBILL_WEB_PAY_BASE_URL)%'
-            callback_url:       '%env(CENTRALBILL_CALLBACK_URL)%'
-            redirect_url:       '%env(CENTRALBILL_REDIRECT_URL)%'
+  gateways:
+    centralbill:
+      enabled: true
+      application_id: '%env(CENTRALBILL_APPLICATION_ID)%'
+      application_secret: '%env(CENTRALBILL_APPLICATION_SECRET)%'
+      web_pay_baseUrl: '%env(CENTRALBILL_WEB_PAY_BASE_URL)%'
+      callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'
+      redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'
+    paystack:
+      enabled: true
+      secret_key: '%env(PAYSTACK_SECRET_KEY)%'
+      api_base_url: '%env(PAYSTACK_API_BASE_URL)%'
+      callback_url: '%env(PAYSTACK_CALLBACK_URL)%'
