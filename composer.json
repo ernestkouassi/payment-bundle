@@ -1,6 +1,6 @@
 {
   "name": "e2k/payment-bundle",
-  "description": "Symfony payment gateway abstraction bundle (CentralBill, extensible).",
+  "description": "Symfony payment gateway abstraction bundle (CentralBill, Paystack, extensible).",
   "type": "symfony-bundle",
   "license": "MIT",
   "keywords": [
