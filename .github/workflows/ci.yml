@@ -146,7 +146,7 @@ jobs:
         run: composer install --prefer-dist --no-interaction --no-scripts --ansi
 
       - name: Run PHPUnit avec coverage
-        run: vendor/bin/phpunit --coverage-clover=coverage.xml
+        run: export XDEBUG_MODE=coverage && vendor/bin/phpunit --coverage-clover=coverage.xml
 
       - name: Upload coverage vers Codecov
         uses: codecov/codecov-action@v4

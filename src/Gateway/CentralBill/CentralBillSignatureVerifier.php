@@ -59,7 +59,7 @@ final readonly class CentralBillSignatureVerifier
             if ('(request-target)' === $headerName) {
                 $signingParts[] = \sprintf('(request-target): %s %s', strtolower($method), $requestUri);
             } else {
-                if (! isset($headers[$headerName])) {
+                if (!isset($headers[$headerName])) {
                     throw InvalidCallbackException::missingField($headerName);
                 }
                 $signingParts[] = \sprintf('%s: %s', $headerName, $headers[$headerName]);
@@ -71,7 +71,7 @@ final readonly class CentralBillSignatureVerifier
             hash_hmac('sha256', $signingString, $this->applicationSecret, true),
         );
 
-        if (! hash_equals($expectedSig, $components['signature'])) {
+        if (!hash_equals($expectedSig, $components['signature'])) {
             throw InvalidCallbackException::invalidSignature('HMAC mismatch', ['signing_string' => $signingString]);
         }
     }

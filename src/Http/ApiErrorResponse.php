@@ -33,7 +33,7 @@ final class ApiErrorResponse extends JsonResponse
             'error' => array_filter([
                 'code' => $code->value,
                 'message' => $message,
-                'details' => $debug && ! empty($details) ? $details : null,
+                'details' => $debug && !empty($details) ? $details : null,
             ]),
         ];
 

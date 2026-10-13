@@ -60,7 +60,7 @@ final class PaystackGatewayTest extends TestCase
     #[Test]
     public function itIsNotConfiguredWhenSecretIsEmpty(): void
     {
-        $gw = new PaystackGateway(new PaystackConfig(''), $this->httpClient);
+        $gw = new PaystackGateway(new PaystackConfig('', ''), $this->httpClient);
         $this->assertFalse($gw->isConfigured());
     }
 
@@ -68,7 +68,7 @@ final class PaystackGatewayTest extends TestCase
     public function itThrowsWhenNotConfiguredOnInitiate(): void
     {
         $this->expectException(GatewayException::class);
-        $gw = new PaystackGateway(new PaystackConfig(''), $this->httpClient);
+        $gw = new PaystackGateway(new PaystackConfig('', ''), $this->httpClient);
         $gw->initiate($this->makeRequest());
     }
 
@@ -135,7 +135,7 @@ final class PaystackGatewayTest extends TestCase
 
         $this->assertTrue($result->isSuccessful());
         $this->assertSame(PaymentStatus::SUCCESS, $result->status);
-        $this->assertSame('ORDER-42', $result->reference);
+        $this->assertSame('ORDER-42', $result->invoiceId);
         $this->assertSame('123456', $result->gatewayTransactionId);
         $this->assertSame(5000, $result->amount);
         $this->assertNull($result->errorMessage);
@@ -218,10 +218,11 @@ final class PaystackGatewayTest extends TestCase
     private function makeRequest(): PaymentRequest
     {
         return new PaymentRequest(
-            amount: 5000,
+            amount: '5000',
             currency: Currency::NGN,
-            reference: 'ORDER-42',
-            customerEmail: 'client@example.com',
+            invoiceId: 'ORDER-42',
+            customerId: 'client@example.com',
+            invoiceIssuedAt: new \DateTime(),
         );
     }
 

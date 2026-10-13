@@ -37,7 +37,6 @@ final class PaystackStatus
             self::SUCCESS => PaymentStatus::SUCCESS,
             self::PENDING, self::ONGOING => PaymentStatus::PENDING,
             self::ABANDONED => PaymentStatus::CANCELLED,
-            self::FAILED => PaymentStatus::FAILED,
             default => PaymentStatus::FAILED,
         };
     }

@@ -21,7 +21,7 @@ class InvalidCallbackException extends \RuntimeException
     public static function invalidSignature(string $detail = '', array $ctx = []): self
     {
         return new self(
-            message: 'IPN rejected: invalid signature.' . ($detail ? " ({$detail})" : ''),
+            message: 'IPN rejected: invalid signature.'.($detail ? " ({$detail})" : ''),
             reason: Reason::INVALID_SIGNATURE,
             debugContext: $ctx,
         );

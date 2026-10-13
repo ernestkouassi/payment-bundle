@@ -37,8 +37,8 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return ! empty($this->config->applicationId)
-            && ! empty($this->config->applicationSecret);
+        return !empty($this->config->applicationId)
+            && !empty($this->config->applicationSecret);
     }
 
     /**
@@ -46,7 +46,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
      */
     public function initiate(PaymentRequest $request): PaymentResponse
     {
-        if (! $this->isConfigured()) {
+        if (!$this->isConfigured()) {
             throw GatewayException::configurationError(self::getName(), 'applicationId or applicationSecret is empty.');
         }
 
@@ -114,7 +114,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
     {
         $body = json_decode($payload->getBody(), true);
 
-        if (! \is_array($body)) {
+        if (!\is_array($body)) {
             throw InvalidCallbackException::malformedPayload('Invalid JSON body.');
         }
 
@@ -123,20 +123,20 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
         $invoiceId = $body['invoice']['id'] ?? null;
         $amount = $body['invoice']['totalAmount']['amount'] ?? null;
 
-        if (! $transactionId) {
+        if (!$transactionId) {
             throw InvalidCallbackException::missingField('id');
         }
-        if (! $cbStatus) {
+        if (!$cbStatus) {
             throw InvalidCallbackException::missingField('result.status');
         }
-        if (! $invoiceId) {
+        if (!$invoiceId) {
             throw InvalidCallbackException::missingField('invoice.id');
         }
 
         $status = CentralBillStatus::toPaymentStatus($cbStatus);
 
         $errorMessage = null;
-        if (! $status->isSuccessful()) {
+        if (!$status->isSuccessful()) {
             $errorMessage = $body['result']['statusReason']
                 ?? \sprintf('Transaction %s by CentralBill.', strtolower($cbStatus));
         }
