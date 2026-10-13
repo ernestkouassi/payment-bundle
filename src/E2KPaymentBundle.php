@@ -7,6 +7,8 @@ namespace E2K\PaymentBundle;
 use E2K\PaymentBundle\EventListener\PaymentExceptionListener;
 use E2K\PaymentBundle\Gateway\CentralBill\CentralBillConfig;
 use E2K\PaymentBundle\Gateway\CentralBill\CentralBillGateway;
+use E2K\PaymentBundle\Gateway\Paystack\PaystackConfig;
+use E2K\PaymentBundle\Gateway\Paystack\PaystackGateway;
 use E2K\PaymentBundle\Registry\PaymentGatewayRegistry;
 use E2K\PaymentBundle\Resolver\ActiveGatewayResolver;
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
@@ -151,9 +153,9 @@ final class E2KPaymentBundle extends AbstractBundle
         );
     }
 
-    private function loadPaystack(array $config, ContainerBuilder $builder): void
+    private function loadPaystack(array $config, ContainerBuilder $container): void
     {
-        $builder->setDefinition(
+        $container->setDefinition(
             'e2k_payment.gateway.paystack.config',
             (new Definition(PaystackConfig::class))
                 ->setArguments([
@@ -161,10 +163,10 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['api_base_url'],
                     $config['callback_url'],
                 ])
-                ->setPrivate(true),
+                ->setPublic(false),
         );
 
-        $builder->setDefinition(
+        $container->setDefinition(
             'e2k_payment.gateway.paystack',
             (new Definition(PaystackGateway::class))
                 ->setArguments([
@@ -172,7 +174,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     new Reference('http_client'),
                 ])
                 ->addTag('e2k_payment.gateway')
-                ->setPrivate(true),
+                ->setPublic(false),
         );
     }
 }
