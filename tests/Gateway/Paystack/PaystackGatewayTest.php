@@ -234,7 +234,7 @@ final class PaystackGatewayTest extends TestCase
                 'id' => 123456,
                 'reference' => 'ORDER-42',
                 'status' => $status,
-                'amount' => 5000,
+                'amount' => 5000 * 100,
                 'currency' => 'NGN',
                 'customer' => ['email' => 'client@example.com'],
                 'paid_at' => '2024-01-01T00:00:00.000Z',
