@@ -18,7 +18,7 @@ final readonly class CallbackResult
         /** Transaction ID on the gateway side */
         public string $gatewayTransactionId,
         /** Confirmed amount by the gateway */
-        public ?int $amount = null,
+        public ?string $amount = null,
         /** Error message if failed */
         public ?string $errorMessage = null,
         /** Raw payload for audit / log */

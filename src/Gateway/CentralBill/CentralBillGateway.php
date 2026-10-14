@@ -145,7 +145,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
             status: $status,
             invoiceId: $invoiceId,
             gatewayTransactionId: $transactionId,
-            amount: isset($amount) ? (int) $amount : null,
+            amount: isset($amount) ? (string) $amount : null,
             errorMessage: $errorMessage,
             rawPayload: $body,
         );

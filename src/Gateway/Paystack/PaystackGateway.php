@@ -56,7 +56,7 @@ final class PaystackGateway implements PaymentGatewayInterface
 
         $body = array_filter([
             'email' => $request->customerId,
-            'amount' => (string) ((int) $request->amount * 100),
+            'amount' => (string) (int) round((float) $request->amount * 100),
             'currency' => $request->currency->value,
             'reference' => $request->invoiceId,
             'callback_url' => $request->callbackUrl ?? $this->config->defaultCallbackUrl,
@@ -176,7 +176,7 @@ final class PaystackGateway implements PaymentGatewayInterface
             status: $status,
             invoiceId: $reference,
             gatewayTransactionId: (string) $paystackId,
-            amount: isset($amount) ? ($amount / 100) : null,
+            amount: isset($amount) ? number_format($amount / 100, 2, '.', '') : null,
             errorMessage: $errorMessage,
             rawPayload: $body,
         );
