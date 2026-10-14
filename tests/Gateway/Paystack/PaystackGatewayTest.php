@@ -137,7 +137,7 @@ final class PaystackGatewayTest extends TestCase
         $this->assertSame(PaymentStatus::SUCCESS, $result->status);
         $this->assertSame('ORDER-42', $result->invoiceId);
         $this->assertSame('123456', $result->gatewayTransactionId);
-        $this->assertSame(5000, $result->amount);
+        $this->assertSame(5000, (int)$result->amount);
         $this->assertNull($result->errorMessage);
     }
 

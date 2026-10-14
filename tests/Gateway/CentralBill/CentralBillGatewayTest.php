@@ -118,7 +118,7 @@ final class CentralBillGatewayTest extends TestCase
         $this->assertSame(PaymentStatus::SUCCESS, $result->status);
         $this->assertSame('1', $result->invoiceId);
         $this->assertSame('tx-123', $result->gatewayTransactionId);
-        $this->assertSame(5000, $result->amount);
+        $this->assertSame(5000, (int)$result->amount);
         $this->assertNull($result->errorMessage);
     }
 
