@@ -361,6 +361,30 @@ final class PaystackGatewayTest extends TestCase
     }
 
     #[Test]
+    public function itValidatesThePaystackSignatureHeaderWhenAWebhookSecretIsConfigured(): void
+    {
+        $gateway = new PaystackGateway(
+            new PaystackConfig(self::SECRET, webhookSecret: 'whsec_test'),
+            new MockHttpClient(),
+        );
+        $raw = '{"event":"charge.success","data":{"reference":"ORDER-42","id":1,"status":"success"}}';
+        $t = time();
+
+        $request = Request::create('/payments/callback/paystack', 'POST', content: $raw);
+        $request->headers->set('Paystack-Signature', \sprintf('t=%d,v1=whk_1:%s', $t, hash_hmac('sha512', $t.'.'.$raw, 'whsec_test')));
+
+        $gateway->validateSignature(new CallbackPayload($request, 'paystack'));
+        $this->addToAssertionCount(1);
+
+        // The legacy header alone is no longer enough.
+        $legacy = Request::create('/payments/callback/paystack', 'POST', content: $raw);
+        $legacy->headers->set('x-paystack-signature', hash_hmac('sha512', $raw, self::SECRET));
+
+        $this->expectException(InvalidCallbackException::class);
+        $gateway->validateSignature(new CallbackPayload($legacy, 'paystack'));
+    }
+
+    #[Test]
     public function itThrowsWhenNotConfiguredOnGetTransactionStatus(): void
     {
         $this->expectException(GatewayException::class);

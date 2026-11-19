@@ -74,6 +74,7 @@ e2k_payment:
             api_base_url: '%env(PAYSTACK_API_BASE_URL)%' # Optional, defaults to https://api.paystack.co
             callback_url: '%env(PAYSTACK_CALLBACK_URL)%'
             # timeout: 10 # Timeout (s) of each Paystack API call
+            # webhook_secret: '%env(PAYSTACK_WEBHOOK_SECRET)%' # Recommended: verifies the timestamped "Paystack-Signature" header
 ```
 
 Define the environment variables in your `.env` or `.env.local`:
@@ -94,6 +95,8 @@ CENTRALBILL_REDIRECT_URL=https://your-domain.com/payment/return
 PAYSTACK_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 PAYSTACK_API_BASE_URL=https://api.paystack.co
 PAYSTACK_CALLBACK_URL=https://your-domain.com/payments/callback/paystack
+# Webhook signing secret (Paystack dashboard > Developers > API configuration)
+PAYSTACK_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxx
 ###< e2k/payment-bundle ###
 ```
 

@@ -86,6 +86,20 @@ final class E2KPaymentExtensionTest extends TestCase
         $this->assertInstanceOf(PaystackConfig::class, $config);
         $this->assertSame('https://api.paystack.co', $config->apiBaseUrl);
         $this->assertSame(PaystackConfig::DEFAULT_TIMEOUT, $config->timeout);
+        $this->assertNull($config->webhookSecret);
+    }
+
+    #[Test]
+    public function itPassesThePaystackWebhookSecret(): void
+    {
+        $container = $this->compile(
+            ['default_gateway' => 'paystack', 'gateways' => ['paystack' => ['enabled' => true, 'secret_key' => 'sk_test', 'webhook_secret' => 'whsec_abc']]],
+            static fn (ContainerBuilder $c) => $c->register('http_client', MockHttpClient::class),
+        );
+
+        $config = $container->get('e2k_payment.gateway.paystack.config');
+        $this->assertInstanceOf(PaystackConfig::class, $config);
+        $this->assertSame('whsec_abc', $config->webhookSecret);
     }
 
     #[Test]

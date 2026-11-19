@@ -10,6 +10,7 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 ## [Unreleased]
 
 ### Security
+- Paystack : prise en charge de l'en-tête `Paystack-Signature` (`t=...,v1=<key id>:<signature>`, HMAC-SHA512 de `{t}.{corps brut}` avec le secret de signature `whsec_...`). Lorsque `gateways.paystack.webhook_secret` est configuré, cet en-tête devient obligatoire : tous les `v1` sont vérifiés (rotation du secret) et les événements dont `t` s'écarte de plus de 300 secondes sont rejetés (`callback.expired_request`). Sans `webhook_secret`, l'ancien `x-paystack-signature` reste vérifié comme avant.
 - CentralBill : les IPN dont l'en-tête `Date` signé s'écarte de plus de `callback_tolerance` secondes (300 par défaut) de l'horloge serveur sont rejetés (`callback.expired_request`), ce qui limite le rejeu d'une notification capturée.
 
 ### Fixed
@@ -23,6 +24,7 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 - CI : chemins PHPStan, job de couverture sur `master`, erreurs PHPStan niveau 8 et style de code.
 
 ### Added
+- Option `gateways.paystack.webhook_secret` (`null` par défaut) et propriété `PaystackConfig::$webhookSecret`.
 - `IgnoredCallbackException`, `Reason::IGNORED_EVENT`, `PaymentErrorCode::CALLBACK_IGNORED` (`callback.ignored_event`) et la constante `PaystackStatus::EVENT_REFUND_PROCESSED`.
 - Option `gateways.centralbill.callback_tolerance` (300 par défaut, 0 pour désactiver).
 - Option `gateways.paystack.timeout` (10 secondes par défaut) ; `gateways.paystack.api_base_url` vaut désormais `https://api.paystack.co` par défaut.

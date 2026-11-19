@@ -21,6 +21,8 @@ final readonly class PaystackConfig
         public ?string $defaultCallbackUrl = null,
         /** Timeout in seconds of each HTTP call to the Paystack API */
         public float $timeout = self::DEFAULT_TIMEOUT,
+        /** Webhook signing secret ("whsec_..."). When set, webhooks must carry a valid "Paystack-Signature" header */
+        public ?string $webhookSecret = null,
     ) {
         $this->apiBaseUrl = rtrim($apiBaseUrl, '/');
     }

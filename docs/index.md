@@ -105,7 +105,17 @@ e2k_payment:
             api_base_url: '%env(PAYSTACK_API_BASE_URL)%'          # Optional, default: https://api.paystack.co
             callback_url: '%env(PAYSTACK_CALLBACK_URL)%'         # Optional
             timeout: 10                                           # Optional, timeout (s) of each Paystack API call
+            webhook_secret: '%env(PAYSTACK_WEBHOOK_SECRET)%'      # Recommended, webhook signing secret (whsec_...)
 ```
+
+> **Paystack webhook signature**: Paystack signs webhooks in two ways ([docs](https://paystack.com/docs/payments/webhooks/#signature-validation)):
+>
+> | `webhook_secret` | Header verified | Replay protection |
+> |---|---|---|
+> | set (`whsec_...`) | `Paystack-Signature: t=...,v1=<key id>:<hmac>`: HMAC-SHA512 of `{t}.{raw body}` with the signing secret; every `v1` is checked (secret rotation) | Yes: events whose `t` is more than 300 s away from the server clock are rejected (`callback.expired_request`). Paystack re-signs retries with a new `t`. |
+> | not set / empty | `x-paystack-signature`: HMAC-SHA512 of the raw body with `secret_key` | No |
+>
+> Once `webhook_secret` is set, `Paystack-Signature` is **mandatory**: the legacy header is no longer accepted, otherwise an attacker could strip the timestamped header and replay an old event. Generate the signing secret on your Paystack dashboard (Developers > API configuration) and make sure your events carry `Paystack-Signature` before setting it. Paystack stops sending `x-paystack-signature` once you delete your secret key, so configuring `webhook_secret` is required in that case.
 
 > **CentralBill IPN freshness**: when the signed `headers` list of an IPN contains `date`, the bundle rejects notifications whose `Date` is more than `callback_tolerance` seconds away from the server clock (`callback.expired_request`, HTTP 400). Keep your server clock synchronized (NTP). This limits replays of captured notifications, but your application must still process callbacks idempotently (e.g. ignore an already processed `gatewayTransactionId`).
 
@@ -129,6 +139,7 @@ CENTRALBILL_REDIRECT_URL=https://your-domain.com/payment/return
 PAYSTACK_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 PAYSTACK_API_BASE_URL=https://api.paystack.co
 PAYSTACK_CALLBACK_URL=https://your-domain.com/payments/callback/paystack
+PAYSTACK_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxx
 ###< e2k/payment-bundle ###
 ```
 

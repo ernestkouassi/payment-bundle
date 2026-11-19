@@ -30,7 +30,7 @@ final class PaystackGateway implements PaymentGatewayInterface
         private readonly PaystackConfig $config,
         private readonly HttpClientInterface $httpClient,
     ) {
-        $this->signatureVerifier = new PaystackSignatureVerifier($this->config->secretKey);
+        $this->signatureVerifier = new PaystackSignatureVerifier($this->config->secretKey, $this->config->webhookSecret);
     }
 
     public static function getName(): string
@@ -96,7 +96,8 @@ final class PaystackGateway implements PaymentGatewayInterface
     }
 
     /**
-     * Validates the HMAC-SHA512 signature of a Paystack webhook.
+     * Validates the HMAC-SHA512 signature of a Paystack webhook: the "Paystack-Signature" header (with replay
+     * protection) when a webhook signing secret is configured, the legacy "x-paystack-signature" header otherwise.
      *
      * {@inheritdoc}
      *

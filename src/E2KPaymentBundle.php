@@ -76,6 +76,10 @@ final class E2KPaymentBundle extends AbstractBundle
                                     ->min(0)
                                     ->info('Timeout in seconds of each HTTP call to the Paystack API.')
                                 ->end()
+                                ->scalarNode('webhook_secret')
+                                    ->defaultNull()
+                                    ->info('Webhook signing secret (whsec_...). When set, webhooks are verified with the "Paystack-Signature" header (timestamped, replay-protected) instead of the legacy "x-paystack-signature".')
+                                ->end()
                             ->end()
                         ->end()
                     ->end()
@@ -189,6 +193,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['api_base_url'],
                     $config['callback_url'],
                     $config['timeout'],
+                    $config['webhook_secret'],
                 ])
                 ->setPublic(false),
         );
