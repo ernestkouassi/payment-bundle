@@ -86,6 +86,15 @@ class GatewayException extends \RuntimeException
         );
     }
 
+    /**
+     * True when the provider refused the call because of its request quota (HTTP 429): the caller should back off
+     * until the quota window rolls over instead of retrying immediately.
+     */
+    public function isRateLimited(): bool
+    {
+        return 429 === $this->gatewayCode;
+    }
+
     public function getGatewayName(): string
     {
         return $this->gatewayName;

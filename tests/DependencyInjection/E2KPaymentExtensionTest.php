@@ -10,6 +10,7 @@ use E2K\PaymentBundle\Gateway\CentralBill\CentralBillConfig;
 use E2K\PaymentBundle\Gateway\CentralBill\CentralBillGateway;
 use E2K\PaymentBundle\Gateway\Paystack\PaystackConfig;
 use E2K\PaymentBundle\Gateway\Paystack\PaystackGateway;
+use E2K\PaymentBundle\PaymentLookupInterface;
 use E2K\PaymentBundle\Registry\PaymentGatewayRegistry;
 use E2K\PaymentBundle\Resolver\ActiveGatewayResolver;
 use E2K\PaymentBundle\Tests\Fixtures\CustomGateway;
@@ -70,6 +71,38 @@ final class E2KPaymentExtensionTest extends TestCase
         $config = $container->get('e2k_payment.gateway.centralbill.config');
         $this->assertInstanceOf(CentralBillConfig::class, $config);
         $this->assertSame(300, $config->callbackTolerance);
+        $this->assertFalse($config->isApiEnabled());
+
+        // Without the server-side API, the gateway needs no HTTP client.
+        $this->assertCount(1, $container->getDefinition('e2k_payment.gateway.centralbill')->getArguments());
+    }
+
+    #[Test]
+    public function itEnablesTheCentralBillServerSideApi(): void
+    {
+        $container = $this->compile(
+            [
+                'default_gateway' => 'centralbill',
+                'gateways' => ['centralbill' => [
+                    'enabled' => true,
+                    'application_id' => 'app',
+                    'application_secret' => 'secret',
+                    'web_pay_baseUrl' => 'https://pay.example.com',
+                    'api_base_url' => 'https://api.centralbill.app',
+                    'initiate_timeout' => 4,
+                ]],
+            ],
+            static fn (ContainerBuilder $c) => $c->register('http_client', MockHttpClient::class),
+        );
+
+        $config = $container->get('e2k_payment.gateway.centralbill.config');
+        $this->assertInstanceOf(CentralBillConfig::class, $config);
+        $this->assertSame('https://api.centralbill.app/processor/v1/rest', $config->apiBaseUrl);
+        $this->assertSame(4.0, $config->initiateTimeout);
+        $this->assertSame(CentralBillConfig::DEFAULT_STATUS_TIMEOUT, $config->statusTimeout);
+
+        $gateway = $this->resolver($container)->resolve();
+        $this->assertInstanceOf(PaymentLookupInterface::class, $gateway);
     }
 
     #[Test]

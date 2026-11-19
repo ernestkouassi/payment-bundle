@@ -61,6 +61,20 @@ final class E2KPaymentBundle extends AbstractBundle
                                     ->min(0)
                                     ->info('Maximum age in seconds of a signed IPN "Date" header. 0 disables the check.')
                                 ->end()
+                                ->scalarNode('api_base_url')
+                                    ->defaultNull()
+                                    ->info('Host of the CentralBill API (e.g. https://api.centralbill.app). When set, payments are pre-created server side before the redirection and can be polled (requires symfony/http-client).')
+                                ->end()
+                                ->floatNode('initiate_timeout')
+                                    ->defaultValue(6.0)
+                                    ->min(0)
+                                    ->info('Timeout in seconds of the payment pre-creation (the customer is waiting).')
+                                ->end()
+                                ->floatNode('status_timeout')
+                                    ->defaultValue(15.0)
+                                    ->min(0)
+                                    ->info('Timeout in seconds of a payment lookup (polling).')
+                                ->end()
                             ->end()
                         ->end()
                         ->arrayNode('paystack')->canBeEnabled()
@@ -163,17 +177,30 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['callback_url'],
                     $config['redirect_url'],
                     $config['callback_tolerance'],
+                    $config['api_base_url'],
+                    $config['initiate_timeout'],
+                    $config['status_timeout'],
                 ])
                 ->setPublic(false),
         );
 
-        $container->setDefinition(
-            'e2k_payment.gateway.centralbill',
-            (new Definition(CentralBillGateway::class))
-                ->setArgument(0, new Reference('e2k_payment.gateway.centralbill.config'))
-                ->addTag('e2k_payment.gateway')
-                ->setPublic(false),
-        );
+        $gateway = (new Definition(CentralBillGateway::class))
+            ->setArgument(0, new Reference('e2k_payment.gateway.centralbill.config'))
+            ->addTag('e2k_payment.gateway')
+            ->setPublic(false);
+
+        // The HTTP client is only needed by the optional server-side API (pre-creation and polling).
+        if (null !== $config['api_base_url'] && '' !== $config['api_base_url']) {
+            if (!class_exists(HttpClient::class)) {
+                throw new \LogicException('The CentralBill server-side API (api_base_url) requires the Symfony HttpClient component. Try running "composer require symfony/http-client".');
+            }
+
+            $gateway
+                ->setArgument(1, new Reference('http_client'))
+                ->setArgument(2, new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE));
+        }
+
+        $container->setDefinition('e2k_payment.gateway.centralbill', $gateway);
     }
 
     /**

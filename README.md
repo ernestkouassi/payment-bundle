@@ -68,6 +68,7 @@ e2k_payment:
             callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'
             redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'
             # callback_tolerance: 300 # Max age (s) of the signed IPN "Date" header, 0 disables the check
+            # api_base_url: '%env(CENTRALBILL_API_URL)%' # e.g. https://api.centralbill.app: server-side pre-creation + polling
         paystack:
             enabled: true
             secret_key: '%env(PAYSTACK_SECRET_KEY)%'

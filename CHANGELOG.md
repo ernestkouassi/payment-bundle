@@ -25,6 +25,9 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 - CI : chemins PHPStan, job de couverture sur `master`, erreurs PHPStan niveau 8 et style de code.
 
 ### Added
+- CentralBill : API serveur optionnelle (`gateways.centralbill.api_base_url`, `initiate_timeout`, `status_timeout`). `initiate()` pré-crée le paiement (`POST /processor/v1/rest/payments`, idempotent sur `applicationId` + `invoice.id` + `signature`) avant la redirection, renvoie l'identifiant du paiement dans `gatewayTransactionId` et le lien `links[rel=pay]` comme `redirectUrl`. En cas d'échec de l'API, la redirection se fait sur le lien Web Pay local, sans bloquer le paiement.
+- Interface optionnelle `PaymentLookupInterface::fetchPayment()`, implémentée par CentralBill (`GET /payments/{id}`) : renvoie un `CallbackResult` (statut, facture, montant, payload) pour le polling et la réconciliation. `getTransactionStatus()` de CentralBill renvoie le vrai statut quand l'API est activée.
+- `GatewayException::isRateLimited()` (HTTP 429).
 - CentralBill : prise en charge de la signature transmise dans `Authorization: Signature ...` (paramètre documenté par CentralBill) en plus de l'en-tête `Signature`.
 - CentralBill : statut `RESERVED` (présent dans la table des statuts CentralBill) mappé vers `PaymentStatus::CANCELLED`.
 - Option `gateways.paystack.webhook_secret` (`null` par défaut) et propriété `PaystackConfig::$webhookSecret`.

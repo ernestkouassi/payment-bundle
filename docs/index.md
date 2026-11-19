@@ -16,6 +16,7 @@
    - [Initiating a Payment](#initiating-a-payment)
    - [Handling IPN / Webhooks](#handling-ipn--webhooks)
    - [Querying Transaction Status](#querying-transaction-status)
+   - [CentralBill Polling (server-side API)](#centralbill-polling-server-side-api)
 8. [Adding a Custom Payment Gateway](#8-adding-a-custom-payment-gateway)
 9. [Exception Handling & Error Format](#9-exception-handling--error-format)
 10. [Translations & Localization](#10-translations--localization)
@@ -98,6 +99,9 @@ e2k_payment:
             callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'       # Optional
             redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'       # Optional
             callback_tolerance: 300                                # Optional, max age (s) of the signed IPN "Date" header. 0 disables the check
+            api_base_url: '%env(CENTRALBILL_API_URL)%'            # Optional, e.g. https://api.centralbill.app: enables server-side pre-creation + polling
+            initiate_timeout: 6                                    # Optional, timeout (s) of the pre-creation (the customer is waiting)
+            status_timeout: 15                                     # Optional, timeout (s) of a payment lookup (polling)
 
         paystack:
             enabled: true
@@ -415,6 +419,54 @@ if ($status->isSuccessful()) {
 ```
 
 > `getTransactionStatus()` throws a `GatewayException` when the status cannot be determined (network failure, invalid API key, unknown reference, non-JSON response, ...). It never reports such technical failures as `PaymentStatus::FAILED`, so you can safely retry later instead of cancelling an order that may have been paid.
+
+### CentralBill Polling (server-side API)
+
+CentralBill's public documentation only describes the signed Web Pay link and the IPN. When `gateways.centralbill.api_base_url` is set, the bundle also uses CentralBill's REST processor (`{api_base_url}/processor/v1/rest`) so that a payment can be polled when its IPN never arrives:
+
+1. `initiate()` first **pre-creates** the payment (`POST /payments`) with the very same signed payload as the Web Pay link. The endpoint is idempotent on `(applicationId, invoice.id, signature)`: replaying it returns the existing payment, and the hosted page reached afterwards finds it back instead of creating a second one. Since the signature covers the amount, the currency and the customer, re-initiating an invoice with another amount creates a **new** payment.
+2. `PaymentResponse::$gatewayTransactionId` then holds the **CentralBill payment id**: store it with your order, it is what you poll. `redirectUrl` is the payment link CentralBill returns for that payment (`links[rel=pay]`) when present, otherwise the locally built Web Pay link.
+3. **The pre-creation never blocks a payment**: if the API is unreachable, rate limited or answers something unusable, a warning is logged and `initiate()` returns the Web Pay link with `gatewayTransactionId = null` (no polling for that payment; the IPN still works).
+4. `fetchPayment($paymentId)` (`E2K\PaymentBundle\PaymentLookupInterface`) reads the payment back (`GET /payments/{id}`) and returns a `CallbackResult`, the same DTO as the IPN. `getTransactionStatus($paymentId)` returns its status only.
+
+**Status rules**: a payment is `SUCCESS` as soon as one of its transactions is `COMPLETED`; otherwise it is `PENDING` (a failed attempt does not fail the payment, the customer can retry until it expires; failures are reported by the IPN). `totalAmountAlreadyPaid` is deliberately not used: CentralBill states it is not the field to decide on. Technical failures throw a `GatewayException` (`isRateLimited()` is true on HTTP 429).
+
+**Before settling an order from a lookup**, check that the result really belongs to it, exactly as for an IPN: `invoiceId`, `amount` (invoice total) and `rawPayload['invoice']['customerId']`.
+
+```php
+use E2K\PaymentBundle\Enum\PaymentStatus;
+use E2K\PaymentBundle\Exception\GatewayException;
+use E2K\PaymentBundle\PaymentLookupInterface;
+
+// e.g. in a Messenger handler scheduled every few minutes for orders still unpaid after 5 minutes
+$gateway = $this->gatewayResolver->resolve('centralbill');
+
+if (!$gateway instanceof PaymentLookupInterface || null === $order->getCentralBillPaymentId()) {
+    return; // nothing to poll: rely on the IPN
+}
+
+try {
+    $result = $gateway->fetchPayment($order->getCentralBillPaymentId());
+} catch (GatewayException $e) {
+    if ($e->isRateLimited()) {
+        // back off until the quota window rolls over (20 requests / 60 s observed)
+    }
+
+    return; // retry on the next run, never cancel the order on a technical failure
+}
+
+if (PaymentStatus::SUCCESS === $result->status
+    && $result->invoiceId === $order->getNumber()
+    && 0 === bccomp((string) $result->amount, $order->getTotal(), 2)
+    && strtolower($result->rawPayload['invoice']['customerId'] ?? '') === strtolower($order->getEmail())
+) {
+    $this->orderPayment->settle($order, $result->gatewayTransactionId); // idempotent: the IPN may win the race
+}
+```
+
+> **Rate limit**: CentralBill answers HTTP 429 beyond **20 requests per 60 seconds** (observed), shared by pre-creations and lookups. Keep polling batches small, and give priority to pre-creations (a customer is waiting). The bundle is stateless: scheduling (e.g. Symfony Scheduler / Messenger) and throttling (e.g. Symfony RateLimiter) belong to the application.
+>
+> **Not covered by CentralBill's public documentation**: the endpoints, response envelopes and the absence of authentication on `GET /payments/{id}` come from a production integration, not from published specifications. The bundle tolerates several response shapes; check the behaviour against the sandbox before relying on polling.
 
 ---
 
