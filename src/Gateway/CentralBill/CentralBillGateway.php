@@ -103,6 +103,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
             headers: $payload->getHeaders(),
             method: strtolower($request->getMethod()),
             requestUri: $request->getRequestUri(),
+            body: $payload->getBody(),
         );
     }
 
@@ -158,7 +159,10 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
     }
 
     /**
-     * Generates the HMAC-SHA256 signature for a payment request.
+     * Generates the payment link signature as documented by CentralBill
+     * (https://docs.centralbill.app/centralbill-payment-api/1-creer-le-lien-de-paiement): hex SHA-256 of
+     * "applicationId,invoiceId,customerId,amount,currency,applicationSecret". This is a plain hash including the
+     * secret, not an HMAC. The amount must be formatted exactly as sent in the link.
      */
     private function generatePaymentSignature(
         string $invoiceId,

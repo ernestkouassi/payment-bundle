@@ -23,6 +23,8 @@ final class CentralBillSignatureVerifierTest extends TestCase
 
     private const URI = '/payments/callback/centralbill';
 
+    private const BODY = '{"id":"tx-1","result":{"status":"FAILED"},"invoice":{"id":"INV-1"}}';
+
     private CentralBillSignatureVerifier $verifier;
 
     protected function setUp(): void
@@ -33,30 +35,78 @@ final class CentralBillSignatureVerifierTest extends TestCase
     #[Test]
     public function itAcceptsAValidHmacSignature(): void
     {
-        $this->verifier->verify($this->signedHeaders(gmdate(\DATE_RFC7231)), self::METHOD, self::URI);
+        $this->verifier->verify($this->signedHeaders(), self::METHOD, self::URI, self::BODY);
         $this->addToAssertionCount(1);
+    }
+
+    #[Test]
+    public function itAcceptsTheStandardBinaryDigestEncoding(): void
+    {
+        $digest = 'SHA-256='.base64_encode(hash('sha256', self::BODY, true));
+
+        $this->verifier->verify($this->signedHeaders(digest: $digest), self::METHOD, self::URI, self::BODY);
+        $this->addToAssertionCount(1);
+    }
+
+    #[Test]
+    public function itAcceptsTheSignatureInTheAuthorizationHeader(): void
+    {
+        $headers = $this->signedHeaders();
+        $headers['authorization'] = 'Signature '.$headers['signature'];
+        unset($headers['signature']);
+
+        $this->verifier->verify($headers, self::METHOD, self::URI, self::BODY);
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Regression test for audit finding C1: the headers of an authentic IPN replayed with a forged body.
+     */
+    #[Test]
+    public function itRejectsAForgedBodyReplayedWithTheHeadersOfAnAuthenticIpn(): void
+    {
+        $forged = '{"id":"tx-1","result":{"status":"COMPLETED"},"invoice":{"id":"INV-999","totalAmount":{"amount":1}}}';
+
+        $this->assertRejected(Reason::INVALID_SIGNATURE, $this->signedHeaders(), $forged);
+    }
+
+    #[Test]
+    public function itRejectsASignatureThatDoesNotCoverTheDigest(): void
+    {
+        $date = gmdate(\DATE_RFC7231);
+        $signingString = implode("\n", [
+            \sprintf('(request-target): %s %s', self::METHOD, self::URI),
+            \sprintf('date: %s', $date),
+        ]);
+        $headers = [
+            'date' => $date,
+            'signature' => \sprintf(
+                'keyId="app-id",algorithm="hmac-sha256",headers="(request-target) date",signature="%s"',
+                base64_encode(hash_hmac('sha256', $signingString, self::SECRET, true)),
+            ),
+        ];
+
+        $this->assertRejected(Reason::INVALID_SIGNATURE, $headers, '{"forged":true}');
+    }
+
+    #[Test]
+    public function itRejectsAnUnsupportedDigestAlgorithm(): void
+    {
+        $digest = 'MD5='.base64_encode(md5(self::BODY, true));
+
+        $this->assertRejected(Reason::INVALID_SIGNATURE, $this->signedHeaders(digest: $digest), self::BODY);
     }
 
     #[Test]
     public function itRejectsASignedDateOlderThanTheTolerance(): void
     {
-        $headers = $this->signedHeaders(gmdate(\DATE_RFC7231, time() - 301));
-
-        try {
-            $this->verifier->verify($headers, self::METHOD, self::URI);
-            $this->fail('Expected InvalidCallbackException was not thrown.');
-        } catch (InvalidCallbackException $e) {
-            $this->assertSame(Reason::EXPIRED_REQUEST, $e->getReason());
-        }
+        $this->assertRejected(Reason::EXPIRED_REQUEST, $this->signedHeaders(gmdate(\DATE_RFC7231, time() - 301)), self::BODY);
     }
 
     #[Test]
     public function itRejectsASignedDateTooFarInTheFuture(): void
     {
-        $this->expectException(InvalidCallbackException::class);
-        $this->expectExceptionMessage('exceeds tolerance');
-
-        $this->verifier->verify($this->signedHeaders(gmdate(\DATE_RFC7231, time() + 3600)), self::METHOD, self::URI);
+        $this->assertRejected(Reason::EXPIRED_REQUEST, $this->signedHeaders(gmdate(\DATE_RFC7231, time() + 3600)), self::BODY);
     }
 
     #[Test]
@@ -64,7 +114,7 @@ final class CentralBillSignatureVerifierTest extends TestCase
     {
         $verifier = new CentralBillSignatureVerifier(self::SECRET, 3600);
 
-        $verifier->verify($this->signedHeaders(gmdate(\DATE_RFC7231, time() - 1800)), self::METHOD, self::URI);
+        $verifier->verify($this->signedHeaders(gmdate(\DATE_RFC7231, time() - 1800)), self::METHOD, self::URI, self::BODY);
         $this->addToAssertionCount(1);
     }
 
@@ -73,126 +123,83 @@ final class CentralBillSignatureVerifierTest extends TestCase
     {
         $verifier = new CentralBillSignatureVerifier(self::SECRET, 0);
 
-        $verifier->verify($this->signedHeaders('Thu, 01 Dec 2022 19:08:22 +0000'), self::METHOD, self::URI);
+        $verifier->verify($this->signedHeaders('Thu, 01 Dec 2022 19:08:22 +0000'), self::METHOD, self::URI, self::BODY);
         $this->addToAssertionCount(1);
     }
 
     #[Test]
     public function itRejectsAnUnparseableSignedDate(): void
     {
-        try {
-            $this->verifier->verify($this->signedHeaders('not-a-date'), self::METHOD, self::URI);
-            $this->fail('Expected InvalidCallbackException was not thrown.');
-        } catch (InvalidCallbackException $e) {
-            $this->assertSame(Reason::MALFORMED_PAYLOAD, $e->getReason());
-        }
+        $this->assertRejected(Reason::MALFORMED_PAYLOAD, $this->signedHeaders('not-a-date'), self::BODY);
     }
 
     #[Test]
     public function itChecksTheSignatureBeforeTheDate(): void
     {
         $headers = $this->signedHeaders('Thu, 01 Dec 2022 19:08:22 +0000');
-        $headers['digest'] = 'SHA256=tampered';
+        $headers['content-type'] = 'text/plain';
 
-        try {
-            $this->verifier->verify($headers, self::METHOD, self::URI);
-            $this->fail('Expected InvalidCallbackException was not thrown.');
-        } catch (InvalidCallbackException $e) {
-            $this->assertSame(Reason::INVALID_SIGNATURE, $e->getReason());
-        }
+        $this->assertRejected(Reason::INVALID_SIGNATURE, $headers, self::BODY);
     }
 
     #[Test]
     public function itRejectsMissingSignatureHeader(): void
     {
-        $this->expectException(InvalidCallbackException::class);
-        $this->expectExceptionMessage('Signature header is absent');
-
-        $this->verifier->verify([], self::METHOD, self::URI);
+        $this->assertRejected(Reason::MISSING_SIGNATURE, [], self::BODY);
+        $this->assertRejected(Reason::MISSING_SIGNATURE, ['authorization' => 'Bearer token'], self::BODY);
     }
 
     #[Test]
     public function itRejectsUnsupportedAlgorithm(): void
     {
-        $this->expectException(InvalidCallbackException::class);
-
         $headers = [
             'signature' => 'keyId="id",algorithm="rsa-sha256",headers="date",signature="xyz"',
             'date' => 'Thu, 01 Dec 2022 19:08:22 +0000',
         ];
 
-        $this->verifier->verify($headers, self::METHOD, self::URI);
+        $this->assertRejected(Reason::UNSUPPORTED_ALGORITHM, $headers, self::BODY);
     }
 
     #[Test]
     public function itRejectsMissingSignatureComponent(): void
     {
-        $this->expectException(InvalidCallbackException::class);
         $headers = [
             'signature' => 'keyId="id",algorithm="hmac-sha256",headers="date"',
             'date' => 'Thu, 01 Dec 2022 19:08:22 +0000',
         ];
 
-        $this->verifier->verify($headers, self::METHOD, self::URI);
+        $this->assertRejected(Reason::MISSING_FIELD, $headers, self::BODY);
     }
 
     #[Test]
     public function itRejectsInvalidHmac(): void
     {
-        $this->expectException(InvalidCallbackException::class);
+        $headers = $this->signedHeaders();
+        $headers['signature'] = preg_replace('/signature="[^"]+"/', 'signature="badsig=="', $headers['signature']) ?? '';
 
-        $headers = [
-            'date' => 'Thu, 01 Dec 2022 19:08:22 +0000',
-            'signature' => 'keyId="id",algorithm="hmac-sha256",headers="date",signature="invalidsignature=="',
-        ];
-
-        $this->verifier->verify($headers, self::METHOD, self::URI);
+        $this->assertRejected(Reason::INVALID_SIGNATURE, $headers, self::BODY);
     }
 
     #[Test]
     public function itRejectsCallbackWithMissingReferencedHeader(): void
     {
-        $this->expectException(InvalidCallbackException::class);
+        $headers = $this->signedHeaders();
+        unset($headers['content-type']);
 
-        $sig = base64_encode(hash_hmac('sha256', 'date: some-date', self::SECRET, true));
-
-        // 'content-type' est listé dans headers mais absent des en-têtes HTTP
-        $headers = [
-            'date' => 'some-date',
-            'signature' => \sprintf(
-                'keyId="id",algorithm="hmac-sha256",headers="date content-type",signature="%s"',
-                $sig,
-            ),
-        ];
-
-        $this->verifier->verify($headers, self::METHOD, self::URI);
-    }
-
-    #[Test]
-    public function itHasInvalidSignatureReasonOnHmacMismatch(): void
-    {
-        $headers = [
-            'date' => 'Thu, 01 Dec 2022 19:08:22 +0000',
-            'signature' => 'keyId="id",algorithm="hmac-sha256",headers="date",signature="badsig=="',
-        ];
-
-        try {
-            $this->verifier->verify($headers, self::METHOD, self::URI);
-            $this->fail('Expected InvalidCallbackException was not thrown.');
-        } catch (InvalidCallbackException $e) {
-            $this->assertSame(Reason::INVALID_SIGNATURE, $e->getReason());
-        }
+        $this->assertRejected(Reason::MISSING_FIELD, $headers, self::BODY);
     }
 
     /**
-     * Builds a correctly signed set of headers for the given Date value.
+     * Builds a correctly signed set of headers, with the digest encoded as in CentralBill's example
+     * (base64 of the hex SHA-256 of the body).
      *
      * @return array<string, string>
      */
-    private function signedHeaders(string $date): array
+    private function signedHeaders(?string $date = null, ?string $digest = null): array
     {
+        $date ??= gmdate(\DATE_RFC7231);
+        $digest ??= 'SHA-256='.base64_encode(hash('sha256', self::BODY));
         $contentType = 'application/json';
-        $digest = 'SHA256=abc123';
 
         $signingString = implode("\n", [
             \sprintf('(request-target): %s %s', self::METHOD, self::URI),
@@ -212,5 +219,18 @@ final class CentralBillSignatureVerifierTest extends TestCase
                 $sig,
             ),
         ];
+    }
+
+    /**
+     * @param array<string, string> $headers
+     */
+    private function assertRejected(Reason $reason, array $headers, string $body): void
+    {
+        try {
+            $this->verifier->verify($headers, self::METHOD, self::URI, $body);
+            $this->fail('Expected InvalidCallbackException was not thrown.');
+        } catch (InvalidCallbackException $e) {
+            $this->assertSame($reason, $e->getReason(), $e->getMessage());
+        }
     }
 }

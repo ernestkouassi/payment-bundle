@@ -167,6 +167,36 @@ final class CentralBillGatewayTest extends TestCase
     }
 
     #[Test]
+    public function itValidatesAnAuthenticIpnAndRejectsAForgedBody(): void
+    {
+        $body = json_encode($this->makeIpnBody('FAILED'), \JSON_THROW_ON_ERROR);
+        $request = $this->makeSignedRequest($body);
+
+        $this->gateway->validateSignature(new CallbackPayload($request, 'centralbill'));
+        $this->addToAssertionCount(1);
+
+        // Same signed headers, forged body (audit finding C1).
+        $forged = Request::create(
+            $request->getRequestUri(),
+            'POST',
+            content: json_encode($this->makeIpnBody('COMPLETED'), \JSON_THROW_ON_ERROR),
+        );
+        $forged->headers->replace($request->headers->all());
+
+        $this->expectException(InvalidCallbackException::class);
+        $this->expectExceptionMessage('does not match the signed "Digest"');
+        $this->gateway->validateSignature(new CallbackPayload($forged, 'centralbill'));
+    }
+
+    #[Test]
+    public function itReturnsCancelledOnReservedIpn(): void
+    {
+        $result = $this->gateway->handle($this->makeCallbackPayload($this->makeIpnBody('RESERVED')));
+
+        $this->assertSame(PaymentStatus::CANCELLED, $result->status);
+    }
+
+    #[Test]
     public function itReturnsCancelledOnCanceledIpn(): void
     {
         $payload = $this->makeCallbackPayload($this->makeIpnBody('CANCELED'));
@@ -234,6 +264,31 @@ final class CentralBillGatewayTest extends TestCase
             invoiceIssuedAt: new \DateTime(),
             customerName: 'John Doe',
         );
+    }
+
+    private function makeSignedRequest(string $body): Request
+    {
+        $uri = '/payments/callback/centralbill?source=ipn';
+        $date = gmdate(\DATE_RFC7231);
+        $digest = 'SHA-256='.base64_encode(hash('sha256', $body));
+        $signingString = implode("\n", [
+            '(request-target): post '.$uri,
+            'content-type: application/json',
+            'date: '.$date,
+            'digest: '.$digest,
+        ]);
+
+        $request = Request::create($uri, 'POST', content: $body);
+        $request->headers->set('Content-Type', 'application/json');
+        $request->headers->set('Date', $date);
+        $request->headers->set('Digest', $digest);
+        $request->headers->set('Authorization', \sprintf(
+            'Signature keyId="%s",algorithm="hmac-sha256",headers="(request-target) content-type date digest",signature="%s"',
+            $this->config->applicationId,
+            base64_encode(hash_hmac('sha256', $signingString, $this->config->applicationSecret, true)),
+        ));
+
+        return $request;
     }
 
     private function redirectUrl(PaymentResponse $response): string

@@ -25,6 +25,9 @@ final class CentralBillStatus
 
     public const REVERSED = 'REVERSED';
 
+    /** Listed in CentralBill's status table ("Either you canceled the transaction or we did"). */
+    public const RESERVED = 'RESERVED';
+
     public const NEEDS_MERCHANT_VALIDATION = 'NEEDS_MERCHANT_VALIDATION';
 
     public static function toPaymentStatus(string $centralBillStatus): PaymentStatus
@@ -32,7 +35,7 @@ final class CentralBillStatus
         return match ($centralBillStatus) {
             self::COMPLETED => PaymentStatus::SUCCESS,
             self::PENDING, self::PROCESSING, self::NEEDS_MERCHANT_VALIDATION => PaymentStatus::PENDING,
-            self::CANCELED, self::REVERSED => PaymentStatus::CANCELLED,
+            self::CANCELED, self::REVERSED, self::RESERVED => PaymentStatus::CANCELLED,
             default => PaymentStatus::FAILED,
         };
     }

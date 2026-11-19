@@ -117,6 +117,8 @@ e2k_payment:
 >
 > Once `webhook_secret` is set, `Paystack-Signature` is **mandatory**: the legacy header is no longer accepted, otherwise an attacker could strip the timestamped header and replay an old event. Generate the signing secret on your Paystack dashboard (Developers > API configuration) and make sure your events carry `Paystack-Signature` before setting it. Paystack stops sending `x-paystack-signature` once you delete your secret key, so configuring `webhook_secret` is required in that case.
 
+> **CentralBill IPN authenticity**: the IPN signature (HMAC-SHA256 keyed with the application secret, sent in `Signature` or `Authorization: Signature ...`) covers the `Digest` header, and the bundle checks that this digest matches the received body. An IPN whose signature does not cover `digest`, or whose body does not match it, is rejected (`callback.invalid_signature`, HTTP 400). Do not rewrite the request body (proxy, middleware) before it reaches the bundle.
+>
 > **CentralBill IPN freshness**: when the signed `headers` list of an IPN contains `date`, the bundle rejects notifications whose `Date` is more than `callback_tolerance` seconds away from the server clock (`callback.expired_request`, HTTP 400). Keep your server clock synchronized (NTP). This limits replays of captured notifications, but your application must still process callbacks idempotently (e.g. ignore an already processed `gatewayTransactionId`).
 
 ### Environment Variables
