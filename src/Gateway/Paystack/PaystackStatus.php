@@ -24,9 +24,11 @@ final class PaystackStatus
     public const ONGOING = 'ongoing';
 
     /**
-     * Paystack webhook events. Only charge.success implies a successful payment.
+     * Paystack webhook events handled by the gateway. Any other event is ignored.
      */
     public const EVENT_CHARGE_SUCCESS = 'charge.success';
+
+    public const EVENT_REFUND_PROCESSED = 'refund.processed';
 
     /**
      * Converts a Paystack transaction status into a normalized PaymentStatus.

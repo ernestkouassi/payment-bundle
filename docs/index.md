@@ -344,6 +344,7 @@ class CheckoutController extends AbstractController
 namespace App\Controller;
 
 use E2K\PaymentBundle\DTO\CallbackPayload;
+use E2K\PaymentBundle\Enum\PaymentStatus;
 use E2K\PaymentBundle\Resolver\ActiveGatewayResolver;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -372,6 +373,9 @@ class WebhookController extends AbstractController
         if ($result->isSuccessful()) {
             // Update order status in database
             // dispatch(new PaymentReceivedEvent($result->invoiceId, $result->gatewayTransactionId));
+        } elseif (PaymentStatus::REFUNDED === $result->status) {
+            // Paystack "refund.processed": $result->invoiceId is the refunded transaction reference,
+            // $result->gatewayTransactionId the refund reference, $result->amount the refunded amount
         } else {
             // Handle failed / cancelled payment
             // $reason = $result->errorMessage;
@@ -381,6 +385,10 @@ class WebhookController extends AbstractController
     }
 }
 ```
+
+> **Ignored events**: `handle()` throws `IgnoredCallbackException` (a subclass of `InvalidCallbackException`) for authentic notifications that do not affect a payment status. On routes under `payment_route_prefix`, `PaymentExceptionListener` acknowledges them with HTTP `200` (`callback.ignored_event`) so that the provider stops retrying. Outside that prefix, catch it in your controller *before* `InvalidCallbackException`.
+>
+> **Paystack events**: `charge.success` → status from `data.status`; `refund.processed` → `PaymentStatus::REFUNDED`; every other event (`transfer.*`, `charge.dispute.*`, `subscription.*`, `refund.pending`, `refund.failed`, ...) is ignored.
 
 ### Querying Transaction Status
 
@@ -524,6 +532,7 @@ The `PaymentExceptionListener` catches all bundle exceptions when the request UR
 | `InvalidCallbackException::missingField` | `400` | `callback.missing_field` |
 | `InvalidCallbackException::expiredRequest` | `400` | `callback.expired_request` |
 | `InvalidCallbackException::replayDetected` | `200` | `callback.replay_detected` |
+| `IgnoredCallbackException::unsupportedEvent` (logged as `info`) | `200` | `callback.ignored_event` |
 | `GatewayNotFoundException::forName` (unknown gateway requested, e.g. from the URL; logged as `warning`) | `404` | `gateway.not_found` |
 | `GatewayNotFoundException::noDefault` (configured `default_gateway` is not registered; logged as `critical`) | `500` | `gateway.not_found` |
 | `GatewayNotFoundException::notConfigured` (logged as `critical`) | `500` | `gateway.not_configured` |

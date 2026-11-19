@@ -66,6 +66,10 @@
                 <source>callback.replay_detected</source>
                 <target>Payment notification already processed.</target>
             </trans-unit>
+            <trans-unit id="callback.ignored_event">
+                <source>callback.ignored_event</source>
+                <target>Payment notification ignored.</target>
+            </trans-unit>
             <trans-unit id="payment.internal_error">
                 <source>payment.internal_error</source>
                 <target>An internal payment error occurred.</target>

@@ -7,6 +7,7 @@ namespace E2K\PaymentBundle\Tests\EventListener;
 use E2K\PaymentBundle\EventListener\PaymentExceptionListener;
 use E2K\PaymentBundle\Exception\GatewayException;
 use E2K\PaymentBundle\Exception\GatewayNotFoundException;
+use E2K\PaymentBundle\Exception\IgnoredCallbackException;
 use E2K\PaymentBundle\Exception\InvalidCallbackException;
 use E2K\PaymentBundle\Tests\Fixtures\RecordingLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -152,6 +153,21 @@ final class PaymentExceptionListenerTest extends TestCase
         $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
         $this->assertSame('callback.replay_detected', $this->json($response)['error']['code']);
         $this->assertSame([LogLevel::WARNING], array_column($logger->records, 0));
+    }
+
+    #[Test]
+    public function itAcknowledgesIgnoredEventsWith200AndLogsAtInfoLevel(): void
+    {
+        $logger = new RecordingLogger();
+        $listener = $this->makeListener(logger: $logger);
+        $event = $this->makeEvent(IgnoredCallbackException::unsupportedEvent('paystack', 'transfer.success'), '/payments/callback/paystack');
+
+        $listener->onKernelException($event);
+
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+        $this->assertSame('callback.ignored_event', $this->json($response)['error']['code']);
+        $this->assertSame([LogLevel::INFO], array_column($logger->records, 0));
     }
 
     #[Test]

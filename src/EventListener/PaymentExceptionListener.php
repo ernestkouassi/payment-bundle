@@ -116,7 +116,11 @@ final class PaymentExceptionListener implements EventSubscriberInterface
         [$httpStatus, $errorCode] = $this->resolveCallbackMeta($e);
 
         $this->logger->log(
-            Reason::REPLAY_DETECTED === $e->getReason() ? LogLevel::WARNING : LogLevel::ERROR,
+            match ($e->getReason()) {
+                Reason::IGNORED_EVENT => LogLevel::INFO,
+                Reason::REPLAY_DETECTED => LogLevel::WARNING,
+                default => LogLevel::ERROR,
+            },
             'IPN callback rejected',
             [
                 'reason' => $e->getReason()->name,
@@ -195,6 +199,8 @@ final class PaymentExceptionListener implements EventSubscriberInterface
             Reason::MISSING_FIELD => [Response::HTTP_BAD_REQUEST, PaymentErrorCode::CALLBACK_MISSING_FIELD],
             Reason::EXPIRED_REQUEST => [Response::HTTP_BAD_REQUEST, PaymentErrorCode::CALLBACK_EXPIRED],
             Reason::REPLAY_DETECTED => [Response::HTTP_OK, PaymentErrorCode::CALLBACK_REPLAY],
+            // Acknowledged so that the provider stops retrying a notification we deliberately ignore.
+            Reason::IGNORED_EVENT => [Response::HTTP_OK, PaymentErrorCode::CALLBACK_IGNORED],
             Reason::UNKNOWN => [Response::HTTP_BAD_REQUEST, PaymentErrorCode::INTERNAL_ERROR],
         };
     }

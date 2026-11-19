@@ -9,7 +9,9 @@ use E2K\PaymentBundle\DTO\PaymentRequest;
 use E2K\PaymentBundle\Enum\Currency;
 use E2K\PaymentBundle\Enum\PaymentStatus;
 use E2K\PaymentBundle\Exception\GatewayException;
+use E2K\PaymentBundle\Exception\IgnoredCallbackException;
 use E2K\PaymentBundle\Exception\InvalidCallbackException;
+use E2K\PaymentBundle\Exception\Reason;
 use E2K\PaymentBundle\Gateway\Paystack\PaystackConfig;
 use E2K\PaymentBundle\Gateway\Paystack\PaystackGateway;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -174,15 +176,113 @@ final class PaystackGatewayTest extends TestCase
     }
 
     #[Test]
-    public function itReturnsFailedOnNonChargeSuccessEvent(): void
+    public function itReturnsFailedOnChargeSuccessEventWithFailedStatus(): void
     {
         $result = $this->makeGateway()->handle(
-            $this->makeCallbackPayload($this->makeWebhookBody('charge.failed', 'failed')),
+            $this->makeCallbackPayload($this->makeWebhookBody('charge.success', 'failed')),
         );
 
         $this->assertFalse($result->isSuccessful());
         $this->assertSame(PaymentStatus::FAILED, $result->status);
         $this->assertNotNull($result->errorMessage);
+    }
+
+    #[Test]
+    public function itMapsRefundProcessedToRefunded(): void
+    {
+        $result = $this->makeGateway()->handle($this->makeCallbackPayload([
+            'event' => 'refund.processed',
+            'data' => [
+                'status' => 'processed',
+                'transaction_reference' => 'ORDER-42',
+                'refund_reference' => 'RF-7890',
+                'amount' => 150000,
+                'currency' => 'NGN',
+            ],
+        ]));
+
+        $this->assertSame(PaymentStatus::REFUNDED, $result->status);
+        $this->assertFalse($result->isSuccessful());
+        $this->assertSame('ORDER-42', $result->invoiceId);
+        $this->assertSame('RF-7890', $result->gatewayTransactionId);
+        $this->assertSame('1500.00', $result->amount);
+        $this->assertNull($result->errorMessage);
+    }
+
+    #[Test]
+    public function itAcceptsReferenceAndIdAsFallbacksForRefundProcessed(): void
+    {
+        $result = $this->makeGateway()->handle($this->makeCallbackPayload([
+            'event' => 'refund.processed',
+            'data' => ['reference' => 'ORDER-42', 'id' => 555, 'amount' => 5000],
+        ]));
+
+        $this->assertSame(PaymentStatus::REFUNDED, $result->status);
+        $this->assertSame('ORDER-42', $result->invoiceId);
+        $this->assertSame('555', $result->gatewayTransactionId);
+    }
+
+    #[Test]
+    public function itFallsBackToTheTransactionReferenceWhenRefundReferenceIsNull(): void
+    {
+        // Shape of the refund payload documented by Paystack: amount as a string, nullable refund_reference, no id.
+        $result = $this->makeGateway()->handle($this->makeCallbackPayload([
+            'event' => 'refund.processed',
+            'data' => [
+                'status' => 'processed',
+                'transaction_reference' => 'tvunjbbd_412829_4b18075d_c7had',
+                'refund_reference' => null,
+                'amount' => '10000',
+                'currency' => 'NGN',
+                'processor' => 'instant-transfer',
+                'customer' => ['first_name' => 'Drew', 'last_name' => 'Berry', 'email' => 'demo@email.com'],
+                'integration' => 412829,
+            ],
+        ]));
+
+        $this->assertSame(PaymentStatus::REFUNDED, $result->status);
+        $this->assertSame('tvunjbbd_412829_4b18075d_c7had', $result->invoiceId);
+        $this->assertSame('tvunjbbd_412829_4b18075d_c7had', $result->gatewayTransactionId);
+        $this->assertSame('100.00', $result->amount);
+    }
+
+    #[Test]
+    public function itRejectsRefundProcessedWithoutTransactionReference(): void
+    {
+        $this->expectException(InvalidCallbackException::class);
+        $this->expectExceptionMessage('data.transaction_reference');
+
+        $this->makeGateway()->handle($this->makeCallbackPayload([
+            'event' => 'refund.processed',
+            'data' => ['refund_reference' => 'RF-7890', 'amount' => 5000],
+        ]));
+    }
+
+    #[Test]
+    #[DataProvider('ignoredEvents')]
+    public function itIgnoresEventsThatDoNotAffectThePaymentStatus(string $event): void
+    {
+        try {
+            // Payload shape deliberately different from a charge: ignored events are not validated.
+            $this->makeGateway()->handle($this->makeCallbackPayload([
+                'event' => $event,
+                'data' => ['transfer_code' => 'TRF_1', 'status' => 'success'],
+            ]));
+            $this->fail('Expected IgnoredCallbackException was not thrown.');
+        } catch (IgnoredCallbackException $e) {
+            $this->assertSame(Reason::IGNORED_EVENT, $e->getReason());
+            $this->assertSame(['gateway' => 'paystack', 'event' => $event], $e->getDebugContext());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function ignoredEvents(): iterable
+    {
+        foreach (['charge.failed', 'charge.dispute.create', 'refund.pending', 'refund.processing', 'refund.failed', 'transfer.success', 'subscription.create'] as $event) {
+            yield $event => [$event];
+        }
     }
 
     #[Test]

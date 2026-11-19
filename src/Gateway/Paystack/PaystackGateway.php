@@ -10,6 +10,7 @@ use E2K\PaymentBundle\DTO\PaymentRequest;
 use E2K\PaymentBundle\DTO\PaymentResponse;
 use E2K\PaymentBundle\Enum\PaymentStatus;
 use E2K\PaymentBundle\Exception\GatewayException;
+use E2K\PaymentBundle\Exception\IgnoredCallbackException;
 use E2K\PaymentBundle\Exception\InvalidCallbackException;
 use E2K\PaymentBundle\PaymentGatewayInterface;
 use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
@@ -114,6 +115,11 @@ final class PaystackGateway implements PaymentGatewayInterface
      *
      * {@inheritdoc}
      *
+     * - "charge.success": status mapped from data.status (SUCCESS, PENDING, CANCELLED or FAILED);
+     * - "refund.processed": REFUNDED, for the transaction referenced by data.transaction_reference;
+     * - any other event: IgnoredCallbackException (to be acknowledged with HTTP 200, no state change).
+     *
+     * @throws IgnoredCallbackException If the event does not affect the payment status
      * @throws InvalidCallbackException If the payload is malformed or incomplete
      */
     public function handle(CallbackPayload $payload): CallbackResult
@@ -125,20 +131,39 @@ final class PaystackGateway implements PaymentGatewayInterface
         }
 
         $event = $body['event'] ?? null;
-        $data = $body['data'] ?? null;
 
-        if (!$event) {
+        if (!\is_string($event) || '' === $event) {
             throw InvalidCallbackException::missingField('event');
         }
+
+        // Only these events change the state of a payment; everything else (transfers, disputes,
+        // subscriptions, other refund steps...) is acknowledged without being interpreted.
+        if (!\in_array($event, [PaystackStatus::EVENT_CHARGE_SUCCESS, PaystackStatus::EVENT_REFUND_PROCESSED], true)) {
+            throw IgnoredCallbackException::unsupportedEvent(self::getName(), $event);
+        }
+
+        $data = $body['data'] ?? null;
 
         if (!\is_array($data)) {
             throw InvalidCallbackException::missingField('data');
         }
 
+        return PaystackStatus::EVENT_REFUND_PROCESSED === $event
+            ? $this->handleRefundProcessed($data, $body)
+            : $this->handleChargeSuccess($data, $body);
+    }
+
+    /**
+     * @param array<mixed>         $data
+     * @param array<string, mixed> $body
+     *
+     * @throws InvalidCallbackException
+     */
+    private function handleChargeSuccess(array $data, array $body): CallbackResult
+    {
         $reference = $data['reference'] ?? null;
         $paystackId = $data['id'] ?? null;
         $paystackStatus = $data['status'] ?? null;
-        $amount = $data['amount'] ?? null;
 
         if (!$reference) {
             throw InvalidCallbackException::missingField('data.reference');
@@ -146,31 +171,61 @@ final class PaystackGateway implements PaymentGatewayInterface
         if (!$paystackId) {
             throw InvalidCallbackException::missingField('data.id');
         }
-        if (!$paystackStatus) {
+        if (!\is_string($paystackStatus) || '' === $paystackStatus) {
             throw InvalidCallbackException::missingField('data.status');
         }
 
-        $status = (PaystackStatus::EVENT_CHARGE_SUCCESS === $event)
-            ? PaystackStatus::toPaymentStatus($paystackStatus)
-            : PaymentStatus::FAILED;
-
-        $errorMessage = null;
-        if (!$status->isSuccessful()) {
-            $errorMessage = \sprintf(
-                'Paystack event "%s" with status "%s".',
-                $event,
-                $paystackStatus,
-            );
-        }
+        $status = PaystackStatus::toPaymentStatus($paystackStatus);
 
         return new CallbackResult(
             status: $status,
-            invoiceId: $reference,
+            invoiceId: (string) $reference,
             gatewayTransactionId: (string) $paystackId,
-            amount: isset($amount) ? number_format($amount / 100, 2, '.', '') : null,
-            errorMessage: $errorMessage,
+            amount: $this->toMajorUnits($data['amount'] ?? null),
+            errorMessage: $status->isSuccessful()
+                ? null
+                : \sprintf('Paystack event "%s" with status "%s".', PaystackStatus::EVENT_CHARGE_SUCCESS, $paystackStatus),
             rawPayload: $body,
         );
+    }
+
+    /**
+     * A processed refund. Payload documented by Paystack (https://paystack.com/docs/payments/webhooks/):
+     * {"status", "transaction_reference", "refund_reference", "amount" (string, subunits), "currency", ...},
+     * without "id". "refund_reference" may be null: the transaction reference is then used as identifier,
+     * so that an authentic refund is never rejected (a rejection would be retried by Paystack for 72 hours).
+     * "reference" and "id" are accepted as fallbacks. The amount is the refunded amount.
+     *
+     * @param array<mixed>         $data
+     * @param array<string, mixed> $body
+     *
+     * @throws InvalidCallbackException
+     */
+    private function handleRefundProcessed(array $data, array $body): CallbackResult
+    {
+        $transactionReference = $data['transaction_reference'] ?? $data['reference'] ?? null;
+
+        if (!$transactionReference) {
+            throw InvalidCallbackException::missingField('data.transaction_reference');
+        }
+
+        $refundReference = $data['refund_reference'] ?? $data['id'] ?? $transactionReference;
+
+        return new CallbackResult(
+            status: PaymentStatus::REFUNDED,
+            invoiceId: (string) $transactionReference,
+            gatewayTransactionId: (string) $refundReference,
+            amount: $this->toMajorUnits($data['amount'] ?? null),
+            rawPayload: $body,
+        );
+    }
+
+    /**
+     * Converts an amount in subunits (kobo, pesewas, cents...) into a decimal string in the main unit.
+     */
+    private function toMajorUnits(mixed $amount): ?string
+    {
+        return is_numeric($amount) ? number_format((float) $amount / 100, 2, '.', '') : null;
     }
 
     /**

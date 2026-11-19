@@ -13,6 +13,7 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 - CentralBill : les IPN dont l'en-tête `Date` signé s'écarte de plus de `callback_tolerance` secondes (300 par défaut) de l'horloge serveur sont rejetés (`callback.expired_request`), ce qui limite le rejeu d'une notification capturée.
 
 ### Fixed
+- Paystack : les webhooks autres que `charge.success` ne sont plus convertis en `PaymentStatus::FAILED`. `refund.processed` donne `PaymentStatus::REFUNDED` (référence de la transaction lue dans `data.transaction_reference`, identifiant du remboursement dans `data.refund_reference`, qui peut être `null` et retombe alors sur la référence de la transaction ; repli sur `reference`/`id`) ; tous les autres événements lèvent `IgnoredCallbackException`, acquittée en 200 par le listener.
 - Paystack : `getTransactionStatus()` lève une `GatewayException` en cas d'erreur HTTP (401, 404, 5xx…), de réponse non-JSON ou de passerelle non configurée, au lieu de renvoyer `PaymentStatus::FAILED`.
 - Paystack : une réponse non-JSON (page d'erreur HTML d'un proxy, par exemple) lève une `GatewayException` au lieu d'une `JsonException` non gérée.
 - CentralBill : `initiate()` utilise `invoiceIssuedAt`, `invoicedDueDate` et `invoiceExpiresAt` de `PaymentRequest` au lieu de dates calculées en dur.
@@ -22,6 +23,7 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 - CI : chemins PHPStan, job de couverture sur `master`, erreurs PHPStan niveau 8 et style de code.
 
 ### Added
+- `IgnoredCallbackException`, `Reason::IGNORED_EVENT`, `PaymentErrorCode::CALLBACK_IGNORED` (`callback.ignored_event`) et la constante `PaystackStatus::EVENT_REFUND_PROCESSED`.
 - Option `gateways.centralbill.callback_tolerance` (300 par défaut, 0 pour désactiver).
 - Option `gateways.paystack.timeout` (10 secondes par défaut) ; `gateways.paystack.api_base_url` vaut désormais `https://api.paystack.co` par défaut.
 - Alias autowirable `PaymentGatewayRegistry`.
@@ -30,6 +32,7 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 - Tests : boot d'un kernel FrameworkBundle, compilation du container, registre, `ApiErrorResponse`, cas d'erreur HTTP Paystack, fraîcheur des IPN CentralBill.
 
 ### Changed
+- Paystack : `charge.failed` et les autres événements non gérés ne renvoient plus un `CallbackResult` en `FAILED` mais lèvent `IgnoredCallbackException`. Le code qui fait un `match` exhaustif sur `Reason` doit gérer le nouveau cas `IGNORED_EVENT`.
 - `payment_route_prefix` ne peut plus être vide ; un préfixe vide au runtime (variable d'environnement) désactive le listener au lieu d'intercepter toutes les routes.
 - `PaymentExceptionListener` est enregistré comme `kernel.event_subscriber` et reçoit `%kernel.debug%` au lieu du service `kernel`. Signature du constructeur : `(?LoggerInterface $logger, bool $debug = false, ?TranslatorInterface $translator = null, string $paymentRoutePrefix = '/payments/')`.
 - `ActiveGatewayResolver::resolve()` sans argument lève `GatewayNotFoundException::noDefault()` si la passerelle par défaut n'est pas enregistrée.

@@ -16,5 +16,6 @@ enum Reason
     case MISSING_FIELD;
     case EXPIRED_REQUEST;
     case REPLAY_DETECTED;
+    case IGNORED_EVENT;
     case UNKNOWN;
 }
