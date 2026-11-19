@@ -15,28 +15,35 @@ use E2K\PaymentBundle\Exception\InvalidCallbackException;
  */
 final readonly class CentralBillSignatureVerifier
 {
+    /** Default maximum age (seconds) of a signed "Date" header. */
+    public const DEFAULT_TOLERANCE = 300;
+
+    /**
+     * @param int $tolerance Maximum age in seconds of the signed "Date" header. 0 disables the check.
+     */
     public function __construct(
         private string $applicationSecret,
+        private int $tolerance = self::DEFAULT_TOLERANCE,
     ) {
     }
 
     /**
-     * @param array<string, string|string[]> $headers    HTTP headers (will be normalized to lowercase)
-     * @param string                         $method     HTTP method in lowercase ("post")
-     * @param string                         $requestUri Request URI ("/payments/callback/centralbill")
+     * @param array<string, string|list<string|null>|null> $headers    HTTP headers (will be normalized to lowercase)
+     * @param string                                       $method     HTTP method in lowercase ("post")
+     * @param string                                       $requestUri Request URI ("/payments/callback/centralbill")
      *
      * @throws InvalidCallbackException
      */
     public function verify(array $headers, string $method, string $requestUri): void
     {
         $headers = array_map(
-            static fn ($v) => \is_array($v) ? implode(', ', $v) : $v,
+            static fn ($v) => \is_array($v) ? implode(', ', $v) : (string) $v,
             array_change_key_case($headers, \CASE_LOWER),
         );
 
         $rawSignatureHeader = $headers['signature'] ?? null;
 
-        if (null === $rawSignatureHeader) {
+        if (null === $rawSignatureHeader || '' === $rawSignatureHeader) {
             throw InvalidCallbackException::missingSignature();
         }
 
@@ -74,6 +81,34 @@ final readonly class CentralBillSignatureVerifier
         if (!hash_equals($expectedSig, $components['signature'])) {
             throw InvalidCallbackException::invalidSignature('HMAC mismatch', ['signing_string' => $signingString]);
         }
+
+        // Freshness is checked only once the signature is valid, so that the "Date" header is trusted.
+        if (\in_array('date', $signedHeaders, true)) {
+            $this->assertFreshDate($headers['date']);
+        }
+    }
+
+    /**
+     * Rejects IPNs whose signed "Date" header is older (or further in the future) than the tolerance,
+     * which prevents a captured notification from being replayed indefinitely.
+     *
+     * @throws InvalidCallbackException
+     */
+    private function assertFreshDate(string $date): void
+    {
+        if (0 === $this->tolerance) {
+            return;
+        }
+
+        $timestamp = strtotime($date);
+
+        if (false === $timestamp) {
+            throw InvalidCallbackException::malformedPayload(\sprintf('Unparseable "Date" header "%s".', $date));
+        }
+
+        if (abs(time() - $timestamp) > $this->tolerance) {
+            throw InvalidCallbackException::expiredRequest($date, $this->tolerance);
+        }
     }
 
     /**
@@ -85,7 +120,7 @@ final readonly class CentralBillSignatureVerifier
     {
         $components = [];
 
-        foreach (preg_split('/,(?=(?:[^"]*"[^"]*")*[^"]*$)/', $header) as $part) {
+        foreach (preg_split('/,(?=(?:[^"]*"[^"]*")*[^"]*$)/', $header) ?: [] as $part) {
             $parts = explode('=', trim($part), 2);
 
             if (2 !== \count($parts)) {

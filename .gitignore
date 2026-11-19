@@ -43,3 +43,4 @@ local.properties
 # Eclipse Core		
 .project
 auth.json
+AUDIT_REPORT.md

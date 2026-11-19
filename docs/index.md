@@ -53,7 +53,8 @@ The bundle decouples your business logic from specific payment providers:
 
 - **PHP**: `8.2` or higher
 - **Symfony**: `^6.4` (LTS) or `^7.4`
-- **HTTP Client**: `symfony/http-client` (required when using the Paystack gateway)
+- **HTTP Client**: `symfony/http-client` (required when using the Paystack gateway: `composer require symfony/http-client`)
+- **Translation** (optional): `symfony/translation` to get translated error messages. Without it, the exception listener falls back to English messages.
 
 ### Composer
 
@@ -85,7 +86,7 @@ e2k_payment:
     # Default gateway name resolved when none is specified
     default_gateway: '%env(PAYMENT_DEFAULT_GATEWAY)%'
 
-    # Route prefix intercepted by PaymentExceptionListener (default: /payments/)
+    # Route prefix intercepted by PaymentExceptionListener (default: /payments/, cannot be empty)
     payment_route_prefix: '%env(PAYMENT_ROUTE_PREFIX)%'
 
     gateways:
@@ -96,13 +97,17 @@ e2k_payment:
             web_pay_baseUrl: '%env(CENTRALBILL_WEB_PAY_BASE_URL)%'
             callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'       # Optional
             redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'       # Optional
+            callback_tolerance: 300                                # Optional, max age (s) of the signed IPN "Date" header. 0 disables the check
 
         paystack:
             enabled: true
             secret_key: '%env(PAYSTACK_SECRET_KEY)%'
-            api_base_url: '%env(PAYSTACK_API_BASE_URL)%'          # Default: https://api.paystack.co
+            api_base_url: '%env(PAYSTACK_API_BASE_URL)%'          # Optional, default: https://api.paystack.co
             callback_url: '%env(PAYSTACK_CALLBACK_URL)%'         # Optional
+            timeout: 10                                           # Optional, timeout (s) of each Paystack API call
 ```
+
+> **CentralBill IPN freshness**: when the signed `headers` list of an IPN contains `date`, the bundle rejects notifications whose `Date` is more than `callback_tolerance` seconds away from the server clock (`callback.expired_request`, HTTP 400). Keep your server clock synchronized (NTP). This limits replays of captured notifications, but your application must still process callbacks idempotently (e.g. ignore an already processed `gatewayTransactionId`).
 
 ### Environment Variables
 
@@ -136,7 +141,7 @@ The bundle registers and aliases the following services in the Symfony container
 | Service Class | Service ID / Alias | Description |
 |---|---|---|
 | `E2K\PaymentBundle\Resolver\ActiveGatewayResolver` | `e2k_payment.resolver` | Resolves payment gateways by name or falls back to the default gateway. |
-| `E2K\PaymentBundle\Registry\PaymentGatewayRegistry` | `e2k_payment.registry` | Service locator holding all tagged gateways. |
+| `E2K\PaymentBundle\Registry\PaymentGatewayRegistry` | `e2k_payment.registry` | Lazy service locator holding all tagged gateways (autowirable, private). |
 | `E2K\PaymentBundle\EventListener\PaymentExceptionListener` | `e2k_payment.exception_listener` | Normalizes exceptions into JSON API responses on configured routes. |
 
 ### Using `ActiveGatewayResolver`
@@ -388,6 +393,8 @@ if ($status->isSuccessful()) {
 }
 ```
 
+> `getTransactionStatus()` throws a `GatewayException` when the status cannot be determined (network failure, invalid API key, unknown reference, non-JSON response, ...). It never reports such technical failures as `PaymentStatus::FAILED`, so you can safely retry later instead of cancelling an order that may have been paid.
+
 ---
 
 ## 8. Adding a Custom Payment Gateway
@@ -517,8 +524,9 @@ The `PaymentExceptionListener` catches all bundle exceptions when the request UR
 | `InvalidCallbackException::missingField` | `400` | `callback.missing_field` |
 | `InvalidCallbackException::expiredRequest` | `400` | `callback.expired_request` |
 | `InvalidCallbackException::replayDetected` | `200` | `callback.replay_detected` |
-| `GatewayNotFoundException::forName` | `500` | `gateway.not_found` |
-| `GatewayNotFoundException::notConfigured` | `500` | `gateway.not_configured` |
+| `GatewayNotFoundException::forName` (unknown gateway requested, e.g. from the URL; logged as `warning`) | `404` | `gateway.not_found` |
+| `GatewayNotFoundException::noDefault` (configured `default_gateway` is not registered; logged as `critical`) | `500` | `gateway.not_found` |
+| `GatewayNotFoundException::notConfigured` (logged as `critical`) | `500` | `gateway.not_configured` |
 
 ---
 
@@ -526,9 +534,9 @@ The `PaymentExceptionListener` catches all bundle exceptions when the request UR
 
 The bundle provides message translations in both English (`en`) and French (`fr`) under the `E2KPaymentBundle` translation domain.
 
-Translation files:
-- `translations/E2KPaymentBundle.en.yaml`
-- `translations/E2KPaymentBundle.fr.yaml`
+Translation files (XLIFF, so that no extra component such as `symfony/yaml` is needed):
+- `translations/E2KPaymentBundle.en.xlf`
+- `translations/E2KPaymentBundle.fr.xlf`
 
 Messages can be customized by overriding the translation keys in your application's `translations/` directory.
 

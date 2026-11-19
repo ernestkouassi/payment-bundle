@@ -9,6 +9,9 @@ namespace E2K\PaymentBundle\Exception;
  */
 class InvalidCallbackException extends \RuntimeException
 {
+    /**
+     * @param array<string, mixed> $debugContext
+     */
     public function __construct(
         string $message,
         private readonly Reason $reason = Reason::UNKNOWN,
@@ -18,6 +21,9 @@ class InvalidCallbackException extends \RuntimeException
         parent::__construct($message, 0, $previous);
     }
 
+    /**
+     * @param array<string, mixed> $ctx
+     */
     public static function invalidSignature(string $detail = '', array $ctx = []): self
     {
         return new self(
@@ -89,6 +95,9 @@ class InvalidCallbackException extends \RuntimeException
         return $this->reason;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function getDebugContext(): array
     {
         return $this->debugContext;

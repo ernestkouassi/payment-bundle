@@ -22,14 +22,14 @@ final readonly class PaystackSignatureVerifier
     /**
      * Verify the HMAC-SHA512 signature of a Paystack webhook.
      *
-     * @param array<string, string|string[]> $headers
+     * @param array<string, string|list<string|null>|null> $headers
      *
      * @throws InvalidCallbackException If the signature is missing or invalid
      */
     public function verify(array $headers, string $rawBody): void
     {
         $headers = array_map(
-            static fn ($v) => \is_array($v) ? implode(', ', $v) : $v,
+            static fn ($v) => \is_array($v) ? implode(', ', $v) : (string) $v,
             array_change_key_case($headers, \CASE_LOWER),
         );
 

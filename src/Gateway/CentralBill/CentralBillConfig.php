@@ -15,6 +15,8 @@ final readonly class CentralBillConfig
         public string $webPayBaseUrl,
         public ?string $defaultCallbackUrl = null,
         public ?string $defaultRedirectUrl = null,
+        /** Maximum age in seconds of a signed IPN "Date" header. 0 disables the check. */
+        public int $callbackTolerance = CentralBillSignatureVerifier::DEFAULT_TOLERANCE,
     ) {
     }
 }

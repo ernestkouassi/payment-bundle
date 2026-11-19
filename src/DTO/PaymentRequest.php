@@ -11,6 +11,9 @@ use E2K\PaymentBundle\Enum\Currency;
  */
 final readonly class PaymentRequest
 {
+    /**
+     * @param array<string, mixed> $metadata
+     */
     public function __construct(
         /** Amount in whole units (e.g., 5000 for 5000 XOF) */
         public string $amount,

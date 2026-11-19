@@ -11,6 +11,9 @@ use E2K\PaymentBundle\Enum\PaymentStatus;
  */
 final readonly class CallbackResult
 {
+    /**
+     * @param array<string, mixed> $rawPayload
+     */
     public function __construct(
         public PaymentStatus $status,
         /** Internal reference of your system */

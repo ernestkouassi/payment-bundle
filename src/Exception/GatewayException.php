@@ -9,6 +9,9 @@ namespace E2K\PaymentBundle\Exception;
  */
 class GatewayException extends \RuntimeException
 {
+    /**
+     * @param array<string, mixed> $context
+     */
     public function __construct(
         private readonly string $gatewayName,
         string $message,
@@ -42,6 +45,9 @@ class GatewayException extends \RuntimeException
         );
     }
 
+    /**
+     * @param array<string, mixed> $rawResponse
+     */
     public static function unexpectedResponse(
         string $gatewayName,
         string $detail,
@@ -63,6 +69,9 @@ class GatewayException extends \RuntimeException
         );
     }
 
+    /**
+     * @param array<string, mixed> $context
+     */
     public static function declined(
         string $gatewayName,
         string $reason,
@@ -87,6 +96,9 @@ class GatewayException extends \RuntimeException
         return $this->gatewayCode;
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function getContext(): array
     {
         return $this->context;

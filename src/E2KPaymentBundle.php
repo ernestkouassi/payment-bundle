@@ -15,9 +15,11 @@ use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 
 /**
@@ -38,7 +40,8 @@ final class E2KPaymentBundle extends AbstractBundle
                 ->end()
                 ->scalarNode('payment_route_prefix')
                     ->defaultValue('/payments/')
-                    ->info('Prefix for payment-related routes.')
+                    ->cannotBeEmpty()
+                    ->info('Prefix for payment-related routes (e.g., /payments/). Exceptions are only converted to JSON under this prefix.')
                 ->end()
                 ->arrayNode('gateways')
                     ->addDefaultsIfNotSet()
@@ -53,15 +56,25 @@ final class E2KPaymentBundle extends AbstractBundle
                                 ->end()
                                 ->scalarNode('callback_url')->defaultNull()->end()
                                 ->scalarNode('redirect_url')->defaultNull()->end()
+                                ->integerNode('callback_tolerance')
+                                    ->defaultValue(300)
+                                    ->min(0)
+                                    ->info('Maximum age in seconds of a signed IPN "Date" header. 0 disables the check.')
+                                ->end()
                             ->end()
                         ->end()
                         ->arrayNode('paystack')->canBeEnabled()
                             ->children()
                                 ->scalarNode('secret_key')->isRequired()->cannotBeEmpty()
                                 ->end()
-                                ->scalarNode('api_base_url')->isRequired()->cannotBeEmpty()
+                                ->scalarNode('api_base_url')->defaultValue('https://api.paystack.co')->cannotBeEmpty()
                                 ->end()
                                 ->scalarNode('callback_url')->defaultNull()
+                                ->end()
+                                ->floatNode('timeout')
+                                    ->defaultValue(10.0)
+                                    ->min(0)
+                                    ->info('Timeout in seconds of each HTTP call to the Paystack API.')
                                 ->end()
                             ->end()
                         ->end()
@@ -70,6 +83,9 @@ final class E2KPaymentBundle extends AbstractBundle
             ->end();
     }
 
+    /**
+     * @param array<string, mixed> $config
+     */
     public function loadExtension(array $config, ContainerConfigurator $configurator, ContainerBuilder $container): void
     {
         $container
@@ -84,6 +100,8 @@ final class E2KPaymentBundle extends AbstractBundle
                 ))
                 ->setPublic(false),
         );
+
+        $container->setAlias(PaymentGatewayRegistry::class, 'e2k_payment.registry');
 
         $container->setDefinition(
             'e2k_payment.resolver',
@@ -103,15 +121,12 @@ final class E2KPaymentBundle extends AbstractBundle
             'e2k_payment.exception_listener',
             (new Definition(PaymentExceptionListener::class))
                 ->setArguments([
-                    new Reference('logger'),
-                    new Reference('kernel'),
-                    new Reference('translator'),
+                    new Reference('logger', ContainerInterface::NULL_ON_INVALID_REFERENCE),
+                    '%kernel.debug%',
+                    new Reference('translator', ContainerInterface::NULL_ON_INVALID_REFERENCE),
                     $config['payment_route_prefix'],
                 ])
-                ->addTag('kernel.event_listener', [
-                    'event' => 'kernel.exception',
-                    'priority' => 10,
-                ])
+                ->addTag('kernel.event_subscriber')
                 ->setPublic(false),
         );
 
@@ -129,6 +144,9 @@ final class E2KPaymentBundle extends AbstractBundle
         return \dirname(__DIR__);
     }
 
+    /**
+     * @param array<string, mixed> $config
+     */
     private function loadCentralBill(array $config, ContainerBuilder $container): void
     {
         $container->setDefinition(
@@ -140,6 +158,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['web_pay_baseUrl'],
                     $config['callback_url'],
                     $config['redirect_url'],
+                    $config['callback_tolerance'],
                 ])
                 ->setPublic(false),
         );
@@ -153,8 +172,15 @@ final class E2KPaymentBundle extends AbstractBundle
         );
     }
 
+    /**
+     * @param array<string, mixed> $config
+     */
     private function loadPaystack(array $config, ContainerBuilder $container): void
     {
+        if (!class_exists(HttpClient::class)) {
+            throw new \LogicException('The Paystack gateway requires the Symfony HttpClient component. Try running "composer require symfony/http-client".');
+        }
+
         $container->setDefinition(
             'e2k_payment.gateway.paystack.config',
             (new Definition(PaystackConfig::class))
@@ -162,6 +188,7 @@ final class E2KPaymentBundle extends AbstractBundle
                     $config['secret_key'],
                     $config['api_base_url'],
                     $config['callback_url'],
+                    $config['timeout'],
                 ])
                 ->setPublic(false),
         );

@@ -12,6 +12,7 @@ use E2K\PaymentBundle\Enum\PaymentStatus;
 use E2K\PaymentBundle\Exception\GatewayException;
 use E2K\PaymentBundle\Exception\InvalidCallbackException;
 use E2K\PaymentBundle\PaymentGatewayInterface;
+use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -51,7 +52,7 @@ final class PaystackGateway implements PaymentGatewayInterface
     public function initiate(PaymentRequest $request): PaymentResponse
     {
         if (!$this->isConfigured()) {
-            throw GatewayException::configurationError($this->getName(), 'secretKey is empty.');
+            throw GatewayException::configurationError(self::getName(), 'secretKey is empty.');
         }
 
         $body = array_filter([
@@ -60,29 +61,19 @@ final class PaystackGateway implements PaymentGatewayInterface
             'currency' => $request->currency->value,
             'reference' => $request->invoiceId,
             'callback_url' => $request->callbackUrl ?? $this->config->defaultCallbackUrl,
-            'metadata' => array_merge($request->metadata, [
-                'name' => $request->customerName,
-                'description' => $request->description,
-            ]),
+            'metadata' => array_filter(
+                array_merge($request->metadata, [
+                    'name' => $request->customerName,
+                    'description' => $request->description,
+                ]),
+                static fn ($v) => null !== $v,
+            ),
         ], static fn ($v) => null !== $v && '' !== $v && [] !== $v);
 
-        try {
-            $response = $this->httpClient->request('POST', $this->config->apiBaseUrl.'/transaction/initialize', [
-                'headers' => [
-                    'Authorization' => 'Bearer '.$this->config->secretKey,
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => $body,
-            ]);
-
-            $statusCode = $response->getStatusCode();
-            $data = $response->toArray(throw: false);
-        } catch (TransportExceptionInterface $e) {
-            throw GatewayException::networkError($this->getName(), $e);
-        }
+        [$statusCode, $data] = $this->callApi('POST', '/transaction/initialize', ['json' => $body]);
 
         if (200 !== $statusCode || !($data['status'] ?? false)) {
-            throw GatewayException::httpError($this->getName(), $statusCode, $data['message'] ?? 'Unknown error');
+            throw GatewayException::httpError(self::getName(), $statusCode, (string) ($data['message'] ?? 'Unknown error'));
         }
 
         $authUrl = $data['data']['authorization_url'] ?? null;
@@ -90,7 +81,7 @@ final class PaystackGateway implements PaymentGatewayInterface
         $accessCode = $data['data']['access_code'] ?? null;
 
         if (!$authUrl) {
-            throw GatewayException::unexpectedResponse($this->getName(), 'Missing authorization_url in response.', $data);
+            throw GatewayException::unexpectedResponse(self::getName(), 'Missing authorization_url in response.', $data);
         }
 
         return new PaymentResponse(
@@ -187,30 +178,60 @@ final class PaystackGateway implements PaymentGatewayInterface
      *
      * {@inheritdoc}
      *
-     * @throws GatewayException If the API call fails
+     * A technical failure (network, HTTP error, invalid key, unknown reference, non-JSON body) never
+     * yields a payment status: it throws, so that callers do not mark a paid order as failed.
+     *
+     * @throws GatewayException If the API call fails or the response cannot be interpreted
      */
     public function getTransactionStatus(string $gatewayTransactionId): PaymentStatus
     {
+        if (!$this->isConfigured()) {
+            throw GatewayException::configurationError(self::getName(), 'secretKey is empty.');
+        }
+
+        [$statusCode, $data] = $this->callApi('GET', '/transaction/verify/'.rawurlencode($gatewayTransactionId));
+
+        if (200 !== $statusCode || !($data['status'] ?? false)) {
+            throw GatewayException::httpError(self::getName(), $statusCode, (string) ($data['message'] ?? 'Unknown error'));
+        }
+
+        $transactionStatus = $data['data']['status'] ?? null;
+
+        if (!\is_string($transactionStatus) || '' === $transactionStatus) {
+            throw GatewayException::unexpectedResponse(self::getName(), 'Missing data.status in verify response.', $data);
+        }
+
+        return PaystackStatus::toPaymentStatus($transactionStatus);
+    }
+
+    /**
+     * Performs an authenticated call to the Paystack API.
+     *
+     * @param array<string, mixed> $options
+     *
+     * @return array{int, array<string, mixed>} HTTP status code and decoded JSON body
+     *
+     * @throws GatewayException On network failure or non-JSON response
+     */
+    private function callApi(string $method, string $path, array $options = []): array
+    {
+        $statusCode = 0;
+
         try {
-            $response = $this->httpClient->request(
-                'GET',
-                $this->config->apiBaseUrl.'/transaction/verify/'.urlencode($gatewayTransactionId),
-                [
-                    'headers' => [
-                        'Authorization' => 'Bearer '.$this->config->secretKey,
-                    ],
-                ],
-            );
+            $response = $this->httpClient->request($method, $this->config->apiBaseUrl.$path, $options + [
+                'auth_bearer' => $this->config->secretKey,
+                'timeout' => $this->config->timeout,
+            ]);
 
-            $data = $response->toArray(throw: false);
+            $statusCode = $response->getStatusCode();
+            /** @var array<string, mixed> $data */
+            $data = $response->toArray(false);
         } catch (TransportExceptionInterface $e) {
-            throw GatewayException::networkError($this->getName(), $e);
+            throw GatewayException::networkError(self::getName(), $e);
+        } catch (DecodingExceptionInterface $e) {
+            throw GatewayException::unexpectedResponse(self::getName(), \sprintf('Non-JSON response (HTTP %d).', $statusCode));
         }
 
-        if (!($data['status'] ?? false)) {
-            return PaymentStatus::FAILED;
-        }
-
-        return PaystackStatus::toPaymentStatus($data['data']['status'] ?? 'failed');
+        return [$statusCode, $data];
     }
 }

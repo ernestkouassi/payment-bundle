@@ -6,7 +6,6 @@ namespace E2K\PaymentBundle\Registry;
 
 use E2K\PaymentBundle\Exception\GatewayNotFoundException;
 use E2K\PaymentBundle\PaymentGatewayInterface;
-use Symfony\Component\DependencyInjection\Attribute\AutowireLocator;
 use Symfony\Contracts\Service\ServiceProviderInterface;
 
 /**
@@ -14,16 +13,12 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
  */
 readonly class PaymentGatewayRegistry
 {
+    /**
+     * @param ServiceProviderInterface<PaymentGatewayInterface> $locator Lazy service locator built by the bundle extension from the
+     *                                                                   "e2k_payment.gateway" tag, indexed by each gateway's getName().
+     *                                                                   A gateway is only instantiated on the first call to get().
+     */
     public function __construct(
-        /**
-         * PSR-11 ServiceLocator injected by Symfony via #[AutowireLocator].
-         * Indexed by the value returned by getName() for each gateway.
-         * Lazy: a gateway is only instantiated on the first call to get().
-         */
-        #[AutowireLocator(
-            services: 'e2k_payment.gateway',
-            defaultIndexMethod: 'getName',
-        )]
         private ServiceProviderInterface $locator,
     ) {
     }
@@ -34,7 +29,6 @@ readonly class PaymentGatewayRegistry
             throw GatewayNotFoundException::forName($name, $this->getAvailableNames());
         }
 
-        /* @var PaymentGatewayInterface */
         return $this->locator->get($name);
     }
 

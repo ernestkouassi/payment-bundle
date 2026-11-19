@@ -27,6 +27,7 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
     ) {
         $this->signatureVerifier = new CentralBillSignatureVerifier(
             $this->config->applicationSecret,
+            $this->config->callbackTolerance,
         );
     }
 
@@ -50,9 +51,9 @@ final readonly class CentralBillGateway implements PaymentGatewayInterface
             throw GatewayException::configurationError(self::getName(), 'applicationId or applicationSecret is empty.');
         }
 
-        $issuedAt = (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM);
-        $dueDate = (new \DateTimeImmutable('+7 days'))->format(\DateTimeInterface::ATOM);
-        $expiresAt = (new \DateTimeImmutable('+30 days'))->format(\DateTimeInterface::ATOM);
+        $issuedAt = $request->invoiceIssuedAt->format(\DateTimeInterface::ATOM);
+        $dueDate = ($request->invoicedDueDate ?? new \DateTimeImmutable('+7 days'))->format(\DateTimeInterface::ATOM);
+        $expiresAt = ($request->invoiceExpiresAt ?? new \DateTimeImmutable('+30 days'))->format(\DateTimeInterface::ATOM);
 
         $signature = $this->generatePaymentSignature(
             invoiceId: $request->invoiceId,
