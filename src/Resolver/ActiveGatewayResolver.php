@@ -29,6 +29,11 @@ final readonly class ActiveGatewayResolver
     {
         $targetName = $name ?? $this->defaultGatewayName;
 
+        // A missing *default* gateway is a server misconfiguration, not a client error.
+        if (null === $name && !$this->registry->has($targetName)) {
+            throw GatewayNotFoundException::noDefault($targetName, $this->registry->getAvailableNames());
+        }
+
         $gateway = $this->registry->get($targetName);
 
         if (!$gateway->isConfigured()) {

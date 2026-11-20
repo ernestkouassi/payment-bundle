@@ -9,8 +9,46 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 
 ## [Unreleased]
 
+### Security
+- CentralBill : le corps de l'IPN est désormais lié à la signature. L'en-tête `Digest` signé doit correspondre au corps reçu (SHA-256 encodé en base64, au format hexadécimal de l'exemple CentralBill ou au format binaire RFC 3230), et une signature qui ne couvre pas `digest` est rejetée. Auparavant, les en-têtes d'un IPN authentique pouvaient être rejoués avec un corps arbitraire (par exemple un statut `COMPLETED` pour une autre facture).
+- Paystack : prise en charge de l'en-tête `Paystack-Signature` (`t=...,v1=<key id>:<signature>`, HMAC-SHA512 de `{t}.{corps brut}` avec le secret de signature `whsec_...`). Lorsque `gateways.paystack.webhook_secret` est configuré, cet en-tête devient obligatoire : tous les `v1` sont vérifiés (rotation du secret) et les événements dont `t` s'écarte de plus de 300 secondes sont rejetés (`callback.expired_request`). Sans `webhook_secret`, l'ancien `x-paystack-signature` reste vérifié comme avant.
+- CentralBill : les IPN dont l'en-tête `Date` signé s'écarte de plus de `callback_tolerance` secondes (300 par défaut) de l'horloge serveur sont rejetés (`callback.expired_request`), ce qui limite le rejeu d'une notification capturée.
+
+### Fixed
+- Paystack : les webhooks autres que `charge.success` ne sont plus convertis en `PaymentStatus::FAILED`. `refund.processed` donne `PaymentStatus::REFUNDED` (référence de la transaction lue dans `data.transaction_reference`, identifiant du remboursement dans `data.refund_reference`, qui peut être `null` et retombe alors sur la référence de la transaction ; repli sur `reference`/`id`) ; tous les autres événements lèvent `IgnoredCallbackException`, acquittée en 200 par le listener.
+- Paystack : `getTransactionStatus()` lève une `GatewayException` en cas d'erreur HTTP (401, 404, 5xx…), de réponse non-JSON ou de passerelle non configurée, au lieu de renvoyer `PaymentStatus::FAILED`.
+- Paystack : une réponse non-JSON (page d'erreur HTML d'un proxy, par exemple) lève une `GatewayException` au lieu d'une `JsonException` non gérée.
+- CentralBill : `initiate()` utilise `invoiceIssuedAt`, `invoicedDueDate` et `invoiceExpiresAt` de `PaymentRequest` au lieu de dates calculées en dur.
+- Le container compile sans `translator` ni `logger` ; un message explicite est levé si `symfony/http-client` manque alors que Paystack est activé.
+- Les traductions sont livrées en XLIFF : elles ne nécessitent plus `symfony/yaml` (auparavant, le listener levait une exception dans une application sans ce composant).
+- Une passerelle inconnue demandée par le client (par exemple `/payments/callback/xyz`) renvoie 404 et est loggée en `warning` au lieu de 500 et `critical`.
+- CI : chemins PHPStan, job de couverture sur `master`, erreurs PHPStan niveau 8 et style de code.
+
 ### Added
-- À venir
+- CentralBill : API serveur optionnelle (`gateways.centralbill.api_base_url`, `initiate_timeout`, `status_timeout`). `initiate()` pré-crée le paiement (`POST /processor/v1/rest/payments`, idempotent sur `applicationId` + `invoice.id` + `signature`) avant la redirection, renvoie l'identifiant du paiement dans `gatewayTransactionId` et le lien `links[rel=pay]` comme `redirectUrl`. En cas d'échec de l'API, la redirection se fait sur le lien Web Pay local, sans bloquer le paiement.
+- Interface optionnelle `PaymentLookupInterface::fetchPayment()`, implémentée par CentralBill (`GET /payments/{id}`) : renvoie un `CallbackResult` (statut, facture, montant, payload) pour le polling et la réconciliation. `getTransactionStatus()` de CentralBill renvoie le vrai statut quand l'API est activée.
+- `GatewayException::isRateLimited()` (HTTP 429).
+- CentralBill : prise en charge de la signature transmise dans `Authorization: Signature ...` (paramètre documenté par CentralBill) en plus de l'en-tête `Signature`.
+- CentralBill : statut `RESERVED` (présent dans la table des statuts CentralBill) mappé vers `PaymentStatus::CANCELLED`.
+- Option `gateways.paystack.webhook_secret` (`null` par défaut) et propriété `PaystackConfig::$webhookSecret`.
+- `IgnoredCallbackException`, `Reason::IGNORED_EVENT`, `PaymentErrorCode::CALLBACK_IGNORED` (`callback.ignored_event`) et la constante `PaystackStatus::EVENT_REFUND_PROCESSED`.
+- Option `gateways.centralbill.callback_tolerance` (300 par défaut, 0 pour désactiver).
+- Option `gateways.paystack.timeout` (10 secondes par défaut) ; `gateways.paystack.api_base_url` vaut désormais `https://api.paystack.co` par défaut.
+- Alias autowirable `PaymentGatewayRegistry`.
+- `GatewayNotFoundException::isServerMisconfiguration()` et `isNotConfigured()`.
+- Dépendances déclarées : `symfony/event-dispatcher`, `symfony/service-contracts`, `symfony/http-client-contracts`, `symfony/translation-contracts` ; `symfony/http-client` et `symfony/translation` en `suggest`.
+- Tests : boot d'un kernel FrameworkBundle, compilation du container, registre, `ApiErrorResponse`, cas d'erreur HTTP Paystack, fraîcheur des IPN CentralBill.
+
+### Changed
+- `CentralBillSignatureVerifier::verify()` reçoit le corps brut de la requête en quatrième argument obligatoire (`string $body`).
+- Paystack : `charge.failed` et les autres événements non gérés ne renvoient plus un `CallbackResult` en `FAILED` mais lèvent `IgnoredCallbackException`. Le code qui fait un `match` exhaustif sur `Reason` doit gérer le nouveau cas `IGNORED_EVENT`.
+- `payment_route_prefix` ne peut plus être vide ; un préfixe vide au runtime (variable d'environnement) désactive le listener au lieu d'intercepter toutes les routes.
+- `PaymentExceptionListener` est enregistré comme `kernel.event_subscriber` et reçoit `%kernel.debug%` au lieu du service `kernel`. Signature du constructeur : `(?LoggerInterface $logger, bool $debug = false, ?TranslatorInterface $translator = null, string $paymentRoutePrefix = '/payments/')`.
+- `ActiveGatewayResolver::resolve()` sans argument lève `GatewayNotFoundException::noDefault()` si la passerelle par défaut n'est pas enregistrée.
+- Paystack : authentification via l'option `auth_bearer` du client HTTP ; les métadonnées nulles ne sont plus envoyées.
+
+### Removed
+- Méthode privée inutilisée `PaymentExceptionListener::safeMessage()` et attribut sans effet `#[AutowireLocator]` sur `PaymentGatewayRegistry`.
 
 ---
 
@@ -26,5 +64,5 @@ et ce projet respecte le [Versionnement Sémantique](https://semver.org/lang/fr/
 - Support PHP 8.2, 8.3, 8.4
 - Support Symfony 6.4 (LTS) et 7.x
 
-[Unreleased]: https://github.com/e2k/payment-bundle/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/e2k/payment-bundle/releases/tag/v1.0.0
+[Unreleased]: https://github.com/ernestkouassi/payment-bundle/compare/1.1.5...HEAD
+[1.0.0]: https://github.com/ernestkouassi/payment-bundle/releases/tag/1.0.0

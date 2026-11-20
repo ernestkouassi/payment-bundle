@@ -11,6 +11,7 @@ use E2K\PaymentBundle\Resolver\ActiveGatewayResolver;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\ServiceLocator;
 
 /**
  * @author Ernest KOUASSI <ernestkouassi02@gmail.com>
@@ -21,9 +22,8 @@ final class ActiveGatewayResolverTest extends TestCase
     #[Test]
     public function itResolvesTheDefaultGateway(): void
     {
-        $gateway = $this->makeConfiguredGateway('centralbill');
-        $registry = $this->makeRegistry('centralbill', $gateway);
-        $resolver = new ActiveGatewayResolver($registry, 'centralbill');
+        $gateway = $this->makeGateway(configured: true);
+        $resolver = new ActiveGatewayResolver($this->makeRegistry(['centralbill' => $gateway]), 'centralbill');
 
         $this->assertSame($gateway, $resolver->resolve());
     }
@@ -31,52 +31,74 @@ final class ActiveGatewayResolverTest extends TestCase
     #[Test]
     public function itResolvesAnExplicitGatewayByName(): void
     {
-        $gateway = $this->makeConfiguredGateway('wave');
-        $registry = $this->makeRegistry('wave', $gateway);
-        $resolver = new ActiveGatewayResolver($registry, 'centralbill');
+        $gateway = $this->makeGateway(configured: true);
+        $registry = $this->makeRegistry([
+            'centralbill' => $this->makeGateway(configured: true),
+            'wave' => $gateway,
+        ]);
 
-        $this->assertSame($gateway, $resolver->resolve('wave'));
+        $this->assertSame($gateway, (new ActiveGatewayResolver($registry, 'centralbill'))->resolve('wave'));
     }
 
     #[Test]
-    public function itThrowsWhenGatewayIsNotFound(): void
+    public function itReportsAnUnknownRequestedGatewayAsAClientError(): void
     {
-        $this->expectException(GatewayNotFoundException::class);
+        $resolver = new ActiveGatewayResolver($this->makeRegistry(['centralbill' => $this->makeGateway(configured: true)]), 'centralbill');
 
-        $registry = $this->createMock(PaymentGatewayRegistry::class);
-        $registry->method('get')->willThrowException(GatewayNotFoundException::forName('unknown'));
+        try {
+            $resolver->resolve('unknown');
+            $this->fail('Expected GatewayNotFoundException was not thrown.');
+        } catch (GatewayNotFoundException $e) {
+            $this->assertFalse($e->isServerMisconfiguration());
+            $this->assertSame(['centralbill'], $e->getAvailableGateways());
+        }
+    }
 
-        $resolver = new ActiveGatewayResolver($registry, 'unknown');
-        $resolver->resolve();
+    #[Test]
+    public function itReportsAMissingDefaultGatewayAsAServerMisconfiguration(): void
+    {
+        $resolver = new ActiveGatewayResolver($this->makeRegistry(['centralbill' => $this->makeGateway(configured: true)]), 'wave');
+
+        try {
+            $resolver->resolve();
+            $this->fail('Expected GatewayNotFoundException was not thrown.');
+        } catch (GatewayNotFoundException $e) {
+            $this->assertTrue($e->isServerMisconfiguration());
+            $this->assertFalse($e->isNotConfigured());
+            $this->assertSame('wave', $e->getRequestedName());
+            $this->assertSame(['centralbill'], $e->getAvailableGateways());
+        }
     }
 
     #[Test]
     public function itThrowsWhenGatewayIsNotConfigured(): void
     {
-        $this->expectException(GatewayNotFoundException::class);
+        $resolver = new ActiveGatewayResolver($this->makeRegistry(['centralbill' => $this->makeGateway(configured: false)]), 'centralbill');
 
-        $gateway = $this->createMock(PaymentGatewayInterface::class);
-        $gateway->method('isConfigured')->willReturn(false);
-
-        $registry = $this->makeRegistry('centralbill', $gateway);
-        $resolver = new ActiveGatewayResolver($registry, 'centralbill');
-        $resolver->resolve();
+        try {
+            $resolver->resolve();
+            $this->fail('Expected GatewayNotFoundException was not thrown.');
+        } catch (GatewayNotFoundException $e) {
+            $this->assertTrue($e->isServerMisconfiguration());
+            $this->assertTrue($e->isNotConfigured());
+        }
     }
 
-    private function makeConfiguredGateway(string $name): PaymentGatewayInterface
+    private function makeGateway(bool $configured): PaymentGatewayInterface
     {
-        $gateway = $this->createMock(PaymentGatewayInterface::class);
-        $gateway->method('getName')->willReturn($name);
-        $gateway->method('isConfigured')->willReturn(true);
+        $gateway = $this->createStub(PaymentGatewayInterface::class);
+        $gateway->method('isConfigured')->willReturn($configured);
 
         return $gateway;
     }
 
-    private function makeRegistry(string $name, PaymentGatewayInterface $gateway): PaymentGatewayRegistry
+    /**
+     * @param array<string, PaymentGatewayInterface> $gateways
+     */
+    private function makeRegistry(array $gateways): PaymentGatewayRegistry
     {
-        $registry = $this->createMock(PaymentGatewayRegistry::class);
-        $registry->method('get')->with($name)->willReturn($gateway);
-
-        return $registry;
+        return new PaymentGatewayRegistry(new ServiceLocator(
+            array_map(static fn (PaymentGatewayInterface $g) => static fn () => $g, $gateways),
+        ));
     }
 }

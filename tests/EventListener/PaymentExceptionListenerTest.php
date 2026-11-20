@@ -7,16 +7,19 @@ namespace E2K\PaymentBundle\Tests\EventListener;
 use E2K\PaymentBundle\EventListener\PaymentExceptionListener;
 use E2K\PaymentBundle\Exception\GatewayException;
 use E2K\PaymentBundle\Exception\GatewayNotFoundException;
+use E2K\PaymentBundle\Exception\IgnoredCallbackException;
 use E2K\PaymentBundle\Exception\InvalidCallbackException;
+use E2K\PaymentBundle\Tests\Fixtures\RecordingLogger;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
-use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
@@ -25,26 +28,11 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 #[CoversClass(PaymentExceptionListener::class)]
 final class PaymentExceptionListenerTest extends TestCase
 {
-    private KernelInterface $kernel;
-
-    private TranslatorInterface $translator;
-
     private PaymentExceptionListener $listener;
 
     protected function setUp(): void
     {
-        $this->kernel = $this->createMock(KernelInterface::class);
-        $this->translator = $this->createMock(TranslatorInterface::class);
-
-        $this->translator
-            ->method('trans')
-            ->willReturnCallback(static fn (string $key) => $key);
-
-        $this->listener = new PaymentExceptionListener(
-            new NullLogger(),
-            $this->kernel,
-            $this->translator,
-        );
+        $this->listener = $this->makeListener();
     }
 
     #[Test]
@@ -68,6 +56,28 @@ final class PaymentExceptionListenerTest extends TestCase
     }
 
     #[Test]
+    public function itNeverInterceptsAnythingWhenThePrefixIsEmpty(): void
+    {
+        $listener = $this->makeListener(prefix: '');
+        $event = $this->makeEvent(GatewayException::declined('centralbill', 'refused'), '/payments/initiate');
+
+        $listener->onKernelException($event);
+
+        $this->assertFalse($event->hasResponse());
+    }
+
+    #[Test]
+    public function itHonoursACustomPrefix(): void
+    {
+        $listener = $this->makeListener(prefix: '/billing/');
+        $event = $this->makeEvent(GatewayException::declined('centralbill', 'refused'), '/billing/initiate');
+
+        $listener->onKernelException($event);
+
+        $this->assertTrue($event->hasResponse());
+    }
+
+    #[Test]
     public function itHandlesGatewayDeclinedException(): void
     {
         $e = GatewayException::declined('centralbill', 'insufficient funds');
@@ -75,9 +85,9 @@ final class PaymentExceptionListenerTest extends TestCase
 
         $this->listener->onKernelException($event);
 
-        $this->assertTrue($event->hasResponse());
-        $this->assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $event->getResponse()->getStatusCode());
-        $this->assertResponseContains('gateway.declined', $event->getResponse());
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode());
+        $this->assertSame('gateway.declined', $this->json($response)['error']['code']);
     }
 
     #[Test]
@@ -88,8 +98,9 @@ final class PaymentExceptionListenerTest extends TestCase
 
         $this->listener->onKernelException($event);
 
-        $this->assertSame(Response::HTTP_BAD_GATEWAY, $event->getResponse()->getStatusCode());
-        $this->assertResponseContains('gateway.http_error', $event->getResponse());
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_BAD_GATEWAY, $response->getStatusCode());
+        $this->assertSame('gateway.http_error', $this->json($response)['error']['code']);
     }
 
     #[Test]
@@ -100,7 +111,7 @@ final class PaymentExceptionListenerTest extends TestCase
 
         $this->listener->onKernelException($event);
 
-        $this->assertSame(Response::HTTP_BAD_GATEWAY, $event->getResponse()->getStatusCode());
+        $this->assertSame(Response::HTTP_BAD_GATEWAY, $this->response($event)->getStatusCode());
     }
 
     #[Test]
@@ -111,20 +122,52 @@ final class PaymentExceptionListenerTest extends TestCase
 
         $this->listener->onKernelException($event);
 
-        $this->assertSame(Response::HTTP_BAD_REQUEST, $event->getResponse()->getStatusCode());
-        $this->assertResponseContains('callback.invalid_signature', $event->getResponse());
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+        $this->assertSame('callback.invalid_signature', $this->json($response)['error']['code']);
     }
 
     #[Test]
-    public function itHandlesReplayDetectedWith200(): void
+    public function itHandlesExpiredRequestWith400(): void
     {
-        $e = InvalidCallbackException::replayDetected('tx-123');
+        $e = InvalidCallbackException::expiredRequest('Thu, 01 Dec 2022 19:08:22 +0000', 300);
         $event = $this->makeEvent($e, '/payments/callback/centralbill');
 
         $this->listener->onKernelException($event);
 
-        $this->assertSame(Response::HTTP_OK, $event->getResponse()->getStatusCode());
-        $this->assertResponseContains('callback.replay_detected', $event->getResponse());
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+        $this->assertSame('callback.expired_request', $this->json($response)['error']['code']);
+    }
+
+    #[Test]
+    public function itHandlesReplayDetectedWith200AndLogsAWarning(): void
+    {
+        $logger = new RecordingLogger();
+        $listener = $this->makeListener(logger: $logger);
+        $event = $this->makeEvent(InvalidCallbackException::replayDetected('tx-123'), '/payments/callback/centralbill');
+
+        $listener->onKernelException($event);
+
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+        $this->assertSame('callback.replay_detected', $this->json($response)['error']['code']);
+        $this->assertSame([LogLevel::WARNING], array_column($logger->records, 0));
+    }
+
+    #[Test]
+    public function itAcknowledgesIgnoredEventsWith200AndLogsAtInfoLevel(): void
+    {
+        $logger = new RecordingLogger();
+        $listener = $this->makeListener(logger: $logger);
+        $event = $this->makeEvent(IgnoredCallbackException::unsupportedEvent('paystack', 'transfer.success'), '/payments/callback/paystack');
+
+        $listener->onKernelException($event);
+
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+        $this->assertSame('callback.ignored_event', $this->json($response)['error']['code']);
+        $this->assertSame([LogLevel::INFO], array_column($logger->records, 0));
     }
 
     #[Test]
@@ -135,26 +178,54 @@ final class PaymentExceptionListenerTest extends TestCase
 
         $this->listener->onKernelException($event);
 
-        $this->assertSame(Response::HTTP_BAD_REQUEST, $event->getResponse()->getStatusCode());
+        $this->assertSame(Response::HTTP_BAD_REQUEST, $this->response($event)->getStatusCode());
     }
 
     #[Test]
-    public function itHandlesGatewayNotFoundWith500(): void
+    public function itReturns404AndLogsAWarningForAnUnknownRequestedGateway(): void
     {
-        $e = GatewayNotFoundException::forName('unknown', ['centralbill']);
-        $event = $this->makeEvent($e, '/payments/initiate');
+        $logger = new RecordingLogger();
+        $listener = $this->makeListener(logger: $logger);
+        $event = $this->makeEvent(GatewayNotFoundException::forName('unknown', ['centralbill']), '/payments/callback/unknown');
+
+        $listener->onKernelException($event);
+
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_NOT_FOUND, $response->getStatusCode());
+        $this->assertSame('gateway.not_found', $this->json($response)['error']['code']);
+        $this->assertSame([LogLevel::WARNING], array_column($logger->records, 0));
+    }
+
+    #[Test]
+    public function itReturns500AndLogsCriticalWhenTheDefaultGatewayIsMissing(): void
+    {
+        $logger = new RecordingLogger();
+        $listener = $this->makeListener(logger: $logger);
+        $event = $this->makeEvent(GatewayNotFoundException::noDefault('wave', ['centralbill']), '/payments/initiate');
+
+        $listener->onKernelException($event);
+
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $response->getStatusCode());
+        $this->assertSame('gateway.not_found', $this->json($response)['error']['code']);
+        $this->assertSame([LogLevel::CRITICAL], array_column($logger->records, 0));
+    }
+
+    #[Test]
+    public function itReturns500WhenTheGatewayIsNotConfigured(): void
+    {
+        $event = $this->makeEvent(GatewayNotFoundException::notConfigured('centralbill'), '/payments/initiate');
 
         $this->listener->onKernelException($event);
 
-        $this->assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $event->getResponse()->getStatusCode());
-        $this->assertResponseContains('gateway.not_found', $event->getResponse());
+        $response = $this->response($event);
+        $this->assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $response->getStatusCode());
+        $this->assertSame('gateway.not_configured', $this->json($response)['error']['code']);
     }
 
     #[Test]
     public function itMasks5xxMessageInProduction(): void
     {
-        $this->kernel->method('isDebug')->willReturn(false);
-
         $translator = $this->createMock(TranslatorInterface::class);
         $translator
             ->expects($this->once())
@@ -162,7 +233,7 @@ final class PaymentExceptionListenerTest extends TestCase
             ->with('error.internal', [], 'E2KPaymentBundle')
             ->willReturn('An error occurred while processing the payment. Please try again.');
 
-        $listener = new PaymentExceptionListener(new NullLogger(), $this->kernel, $translator);
+        $listener = new PaymentExceptionListener(new NullLogger(), false, $translator);
         $event = $this->makeEvent(
             GatewayException::configurationError('centralbill', 'secret is empty'),
             '/payments/initiate',
@@ -170,9 +241,7 @@ final class PaymentExceptionListenerTest extends TestCase
 
         $listener->onKernelException($event);
 
-        $this->assertTrue($event->hasResponse());
-
-        $body = json_decode($event->getResponse()->getContent(), true);
+        $body = $this->json($this->response($event));
         $this->assertSame(
             'An error occurred while processing the payment. Please try again.',
             $body['error']['message'],
@@ -190,47 +259,99 @@ final class PaymentExceptionListenerTest extends TestCase
             ->with('error.service_unavailable', [], 'E2KPaymentBundle')
             ->willReturn('Le service de paiement est temporairement indisponible.');
 
-        $listener = new PaymentExceptionListener(new NullLogger(), $this->kernel, $translator);
-
-        $event = $this->makeEvent(
-            GatewayNotFoundException::forName('unknown'),
-            '/payments/initiate',
-        );
+        $listener = new PaymentExceptionListener(new NullLogger(), false, $translator);
+        $event = $this->makeEvent(GatewayNotFoundException::notConfigured('centralbill'), '/payments/initiate');
 
         $listener->onKernelException($event);
 
-        $body = json_decode($event->getResponse()->getContent(), true);
         $this->assertSame(
             'Le service de paiement est temporairement indisponible.',
-            $body['error']['message'],
+            $this->json($this->response($event))['error']['message'],
+        );
+    }
+
+    #[Test]
+    public function itFallsBackToEnglishMessagesWithoutTranslator(): void
+    {
+        $listener = new PaymentExceptionListener(null);
+        $event = $this->makeEvent(GatewayNotFoundException::notConfigured('centralbill'), '/payments/initiate');
+
+        $listener->onKernelException($event);
+
+        $this->assertSame(
+            'Payment service is currently unavailable.',
+            $this->json($this->response($event))['error']['message'],
         );
     }
 
     #[Test]
     public function itShowsDetailsInDebugMode(): void
     {
-        $this->kernel->method('isDebug')->willReturn(true);
+        $listener = $this->makeListener(debug: true);
+        $event = $this->makeEvent(GatewayException::declined('centralbill', 'refused'), '/payments/initiate');
 
-        $e = GatewayException::declined('centralbill', 'refused');
-        $event = $this->makeEvent($e, '/payments/initiate');
+        $listener->onKernelException($event);
 
-        $this->listener->onKernelException($event);
-
-        $body = json_decode($event->getResponse()->getContent(), true);
+        $body = $this->json($this->response($event));
         $this->assertArrayHasKey('details', $body['error']);
-        $this->assertArrayHasKey('exception', $body['error']['details']);
+        $this->assertArrayHasKey('exception', $body['error']['details'] ?? []);
+    }
+
+    #[Test]
+    public function itSubscribesToKernelExceptionWithPriority10(): void
+    {
+        $this->assertSame(
+            ['kernel.exception' => [['onKernelException', 10]]],
+            PaymentExceptionListener::getSubscribedEvents(),
+        );
+    }
+
+    private function makeListener(
+        ?LoggerInterface $logger = null,
+        bool $debug = false,
+        string $prefix = '/payments/',
+    ): PaymentExceptionListener {
+        $translator = $this->createStub(TranslatorInterface::class);
+        $translator->method('trans')->willReturnArgument(0);
+
+        return new PaymentExceptionListener($logger ?? new NullLogger(), $debug, $translator, $prefix);
     }
 
     private function makeEvent(\Throwable $exception, string $path): ExceptionEvent
     {
-        $httpKernel = $this->createMock(HttpKernelInterface::class);
-        $request = Request::create($path);
-
-        return new ExceptionEvent($httpKernel, $request, HttpKernelInterface::MAIN_REQUEST, $exception);
+        return new ExceptionEvent(
+            $this->createStub(HttpKernelInterface::class),
+            Request::create($path),
+            HttpKernelInterface::MAIN_REQUEST,
+            $exception,
+        );
     }
 
-    private function assertResponseContains(string $expected, Response $response): void
+    private function response(ExceptionEvent $event): Response
     {
-        $this->assertStringContainsString($expected, $response->getContent());
+        $response = $event->getResponse();
+
+        if (null === $response) {
+            $this->fail('The listener was expected to set a response.');
+        }
+
+        return $response;
+    }
+
+    /**
+     * @return array{error: array{code: string, message: string, details?: array<string, mixed>}}
+     */
+    private function json(Response $response): array
+    {
+        $content = $response->getContent();
+
+        if (false === $content) {
+            $this->fail('The response has no content.');
+        }
+
+        /** @var array{error: array{code: string, message: string, details?: array<string, mixed>}} $decoded */
+        $decoded = json_decode($content, true, 512, \JSON_THROW_ON_ERROR);
+
+        return $decoded;
     }
 }

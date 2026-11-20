@@ -11,11 +11,12 @@ use E2K\PaymentBundle\Exception\Reason;
 use E2K\PaymentBundle\Http\ApiErrorResponse;
 use E2K\PaymentBundle\Http\PaymentErrorCode;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
-use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
@@ -33,12 +34,24 @@ final class PaymentExceptionListener implements EventSubscriberInterface
      */
     private const TRANSLATION_DOMAIN = 'E2KPaymentBundle';
 
+    /**
+     * Messages used when symfony/translation is not installed.
+     */
+    private const FALLBACK_MESSAGES = [
+        'error.internal' => 'An error occurred while processing the payment. Please try again.',
+        'error.service_unavailable' => 'Payment service is currently unavailable.',
+        'gateway.not_found' => 'Payment gateway not found.',
+    ];
+
+    private readonly LoggerInterface $logger;
+
     public function __construct(
-        private readonly LoggerInterface $logger,
-        private readonly KernelInterface $kernel,
-        private readonly TranslatorInterface $translator,
-        private readonly ?string $paymentRoutePrefix = self::PAYMENT_ROUTE_PREFIX,
+        ?LoggerInterface $logger,
+        private readonly bool $debug = false,
+        private readonly ?TranslatorInterface $translator = null,
+        private readonly string $paymentRoutePrefix = self::PAYMENT_ROUTE_PREFIX,
     ) {
+        $this->logger = $logger ?? new NullLogger();
     }
 
     public static function getSubscribedEvents(): array
@@ -50,6 +63,11 @@ final class PaymentExceptionListener implements EventSubscriberInterface
 
     public function onKernelException(ExceptionEvent $event): void
     {
+        // An empty prefix would make the listener hijack every exception of the application.
+        if ('' === $this->paymentRoutePrefix) {
+            return;
+        }
+
         $exception = $event->getThrowable();
         $request = $event->getRequest();
 
@@ -89,7 +107,7 @@ final class PaymentExceptionListener implements EventSubscriberInterface
             message: $this->clientMessage($e, $httpStatus),
             httpStatus: $httpStatus,
             details: $this->debugDetails($e),
-            debug: $this->isDebug(),
+            debug: $this->debug,
         );
     }
 
@@ -97,38 +115,59 @@ final class PaymentExceptionListener implements EventSubscriberInterface
     {
         [$httpStatus, $errorCode] = $this->resolveCallbackMeta($e);
 
-        $logLevel = Reason::REPLAY_DETECTED === $e->getReason() ? 'warning' : 'error';
-        $this->logger->$logLevel('IPN callback rejected', [
-            'reason' => $e->getReason()->name,
-            'message' => $e->getMessage(),
-            'context' => $e->getDebugContext(),
-        ]);
+        $this->logger->log(
+            match ($e->getReason()) {
+                Reason::IGNORED_EVENT => LogLevel::INFO,
+                Reason::REPLAY_DETECTED => LogLevel::WARNING,
+                default => LogLevel::ERROR,
+            },
+            'IPN callback rejected',
+            [
+                'reason' => $e->getReason()->name,
+                'message' => $e->getMessage(),
+                'context' => $e->getDebugContext(),
+            ],
+        );
 
         return new ApiErrorResponse(
             code: $errorCode,
             message: $this->clientMessage($e, $httpStatus),
             httpStatus: $httpStatus,
             details: $this->debugDetails($e),
-            debug: $this->isDebug(),
+            debug: $this->debug,
         );
     }
 
     private function handleNotFoundException(GatewayNotFoundException $e): ApiErrorResponse
     {
-        $this->logger->critical('Payment gateway not found', [
+        $context = [
             'requested' => $e->getRequestedName(),
             'available' => $e->getAvailableGateways(),
             'message' => $e->getMessage(),
-        ]);
+        ];
 
-        $errorCode = $e->getPrevious() instanceof \RuntimeException ? PaymentErrorCode::GATEWAY_NOT_CONFIGURED : PaymentErrorCode::GATEWAY_NOT_FOUND;
+        // Unknown gateway requested by the client (e.g. /payments/callback/{gateway}): client error,
+        // logged as a warning so that anyone hitting random URLs cannot trigger critical alerts.
+        if (!$e->isServerMisconfiguration()) {
+            $this->logger->warning('Unknown payment gateway requested', $context);
+
+            return new ApiErrorResponse(
+                code: PaymentErrorCode::GATEWAY_NOT_FOUND,
+                message: $this->trans('gateway.not_found'),
+                httpStatus: Response::HTTP_NOT_FOUND,
+                details: $this->debugDetails($e),
+                debug: $this->debug,
+            );
+        }
+
+        $this->logger->critical('Payment gateway misconfigured', $context);
 
         return new ApiErrorResponse(
-            code: $errorCode,
+            code: $e->isNotConfigured() ? PaymentErrorCode::GATEWAY_NOT_CONFIGURED : PaymentErrorCode::GATEWAY_NOT_FOUND,
             message: $this->trans('error.service_unavailable'),
             httpStatus: Response::HTTP_INTERNAL_SERVER_ERROR,
             details: $this->debugDetails($e),
-            debug: $this->isDebug(),
+            debug: $this->debug,
         );
     }
 
@@ -160,17 +199,10 @@ final class PaymentExceptionListener implements EventSubscriberInterface
             Reason::MISSING_FIELD => [Response::HTTP_BAD_REQUEST, PaymentErrorCode::CALLBACK_MISSING_FIELD],
             Reason::EXPIRED_REQUEST => [Response::HTTP_BAD_REQUEST, PaymentErrorCode::CALLBACK_EXPIRED],
             Reason::REPLAY_DETECTED => [Response::HTTP_OK, PaymentErrorCode::CALLBACK_REPLAY],
+            // Acknowledged so that the provider stops retrying a notification we deliberately ignore.
+            Reason::IGNORED_EVENT => [Response::HTTP_OK, PaymentErrorCode::CALLBACK_IGNORED],
             Reason::UNKNOWN => [Response::HTTP_BAD_REQUEST, PaymentErrorCode::INTERNAL_ERROR],
         };
-    }
-
-    private function safeMessage(\Throwable $e, int $httpStatus): string
-    {
-        if ($httpStatus >= 500 && !$this->isDebug()) {
-            return 'An error occurred while processing the payment. Please try again.';
-        }
-
-        return $e->getMessage();
     }
 
     /**
@@ -179,13 +211,16 @@ final class PaymentExceptionListener implements EventSubscriberInterface
      */
     private function clientMessage(\Throwable $e, int $httpStatus): string
     {
-        if ($httpStatus >= 500 && !$this->kernel->isDebug()) {
+        if ($httpStatus >= 500 && !$this->debug) {
             return $this->trans('error.internal');
         }
 
         return $e->getMessage();
     }
 
+    /**
+     * @return array{exception: class-string, file: string, line: int}
+     */
     private function debugDetails(\Throwable $e): array
     {
         return [
@@ -195,18 +230,18 @@ final class PaymentExceptionListener implements EventSubscriberInterface
         ];
     }
 
-    private function isDebug(): bool
-    {
-        return $this->kernel->isDebug();
-    }
-
     /**
-     * Translates a message key using the translator service within the specified translation domain.
+     * Translates a message key using the translator service within the bundle translation domain.
+     * Falls back to English messages when no translator is available.
      *
      * @param array<string, mixed> $parameters Translation parameters
      */
     private function trans(string $key, array $parameters = []): string
     {
+        if (null === $this->translator) {
+            return self::FALLBACK_MESSAGES[$key] ?? $key;
+        }
+
         return $this->translator->trans($key, $parameters, self::TRANSLATION_DOMAIN);
     }
 }

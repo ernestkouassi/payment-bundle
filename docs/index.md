@@ -16,6 +16,7 @@
    - [Initiating a Payment](#initiating-a-payment)
    - [Handling IPN / Webhooks](#handling-ipn--webhooks)
    - [Querying Transaction Status](#querying-transaction-status)
+   - [CentralBill Polling (server-side API)](#centralbill-polling-server-side-api)
 8. [Adding a Custom Payment Gateway](#8-adding-a-custom-payment-gateway)
 9. [Exception Handling & Error Format](#9-exception-handling--error-format)
 10. [Translations & Localization](#10-translations--localization)
@@ -53,7 +54,8 @@ The bundle decouples your business logic from specific payment providers:
 
 - **PHP**: `8.2` or higher
 - **Symfony**: `^6.4` (LTS) or `^7.4`
-- **HTTP Client**: `symfony/http-client` (required when using the Paystack gateway)
+- **HTTP Client**: `symfony/http-client` (required when using the Paystack gateway: `composer require symfony/http-client`)
+- **Translation** (optional): `symfony/translation` to get translated error messages. Without it, the exception listener falls back to English messages.
 
 ### Composer
 
@@ -85,7 +87,7 @@ e2k_payment:
     # Default gateway name resolved when none is specified
     default_gateway: '%env(PAYMENT_DEFAULT_GATEWAY)%'
 
-    # Route prefix intercepted by PaymentExceptionListener (default: /payments/)
+    # Route prefix intercepted by PaymentExceptionListener (default: /payments/, cannot be empty)
     payment_route_prefix: '%env(PAYMENT_ROUTE_PREFIX)%'
 
     gateways:
@@ -96,13 +98,32 @@ e2k_payment:
             web_pay_baseUrl: '%env(CENTRALBILL_WEB_PAY_BASE_URL)%'
             callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'       # Optional
             redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'       # Optional
+            callback_tolerance: 300                                # Optional, max age (s) of the signed IPN "Date" header. 0 disables the check
+            api_base_url: '%env(CENTRALBILL_API_URL)%'            # Optional, e.g. https://api.centralbill.app: enables server-side pre-creation + polling
+            initiate_timeout: 6                                    # Optional, timeout (s) of the pre-creation (the customer is waiting)
+            status_timeout: 15                                     # Optional, timeout (s) of a payment lookup (polling)
 
         paystack:
             enabled: true
             secret_key: '%env(PAYSTACK_SECRET_KEY)%'
-            api_base_url: '%env(PAYSTACK_API_BASE_URL)%'          # Default: https://api.paystack.co
+            api_base_url: '%env(PAYSTACK_API_BASE_URL)%'          # Optional, default: https://api.paystack.co
             callback_url: '%env(PAYSTACK_CALLBACK_URL)%'         # Optional
+            timeout: 10                                           # Optional, timeout (s) of each Paystack API call
+            webhook_secret: '%env(PAYSTACK_WEBHOOK_SECRET)%'      # Recommended, webhook signing secret (whsec_...)
 ```
+
+> **Paystack webhook signature**: Paystack signs webhooks in two ways ([docs](https://paystack.com/docs/payments/webhooks/#signature-validation)):
+>
+> | `webhook_secret` | Header verified | Replay protection |
+> |---|---|---|
+> | set (`whsec_...`) | `Paystack-Signature: t=...,v1=<key id>:<hmac>`: HMAC-SHA512 of `{t}.{raw body}` with the signing secret; every `v1` is checked (secret rotation) | Yes: events whose `t` is more than 300 s away from the server clock are rejected (`callback.expired_request`). Paystack re-signs retries with a new `t`. |
+> | not set / empty | `x-paystack-signature`: HMAC-SHA512 of the raw body with `secret_key` | No |
+>
+> Once `webhook_secret` is set, `Paystack-Signature` is **mandatory**: the legacy header is no longer accepted, otherwise an attacker could strip the timestamped header and replay an old event. Generate the signing secret on your Paystack dashboard (Developers > API configuration) and make sure your events carry `Paystack-Signature` before setting it. Paystack stops sending `x-paystack-signature` once you delete your secret key, so configuring `webhook_secret` is required in that case.
+
+> **CentralBill IPN authenticity**: the IPN signature (HMAC-SHA256 keyed with the application secret, sent in `Signature` or `Authorization: Signature ...`) covers the `Digest` header, and the bundle checks that this digest matches the received body. An IPN whose signature does not cover `digest`, or whose body does not match it, is rejected (`callback.invalid_signature`, HTTP 400). Do not rewrite the request body (proxy, middleware) before it reaches the bundle.
+>
+> **CentralBill IPN freshness**: when the signed `headers` list of an IPN contains `date`, the bundle rejects notifications whose `Date` is more than `callback_tolerance` seconds away from the server clock (`callback.expired_request`, HTTP 400). Keep your server clock synchronized (NTP). This limits replays of captured notifications, but your application must still process callbacks idempotently (e.g. ignore an already processed `gatewayTransactionId`).
 
 ### Environment Variables
 
@@ -124,6 +145,7 @@ CENTRALBILL_REDIRECT_URL=https://your-domain.com/payment/return
 PAYSTACK_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 PAYSTACK_API_BASE_URL=https://api.paystack.co
 PAYSTACK_CALLBACK_URL=https://your-domain.com/payments/callback/paystack
+PAYSTACK_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxx
 ###< e2k/payment-bundle ###
 ```
 
@@ -136,7 +158,7 @@ The bundle registers and aliases the following services in the Symfony container
 | Service Class | Service ID / Alias | Description |
 |---|---|---|
 | `E2K\PaymentBundle\Resolver\ActiveGatewayResolver` | `e2k_payment.resolver` | Resolves payment gateways by name or falls back to the default gateway. |
-| `E2K\PaymentBundle\Registry\PaymentGatewayRegistry` | `e2k_payment.registry` | Service locator holding all tagged gateways. |
+| `E2K\PaymentBundle\Registry\PaymentGatewayRegistry` | `e2k_payment.registry` | Lazy service locator holding all tagged gateways (autowirable, private). |
 | `E2K\PaymentBundle\EventListener\PaymentExceptionListener` | `e2k_payment.exception_listener` | Normalizes exceptions into JSON API responses on configured routes. |
 
 ### Using `ActiveGatewayResolver`
@@ -339,6 +361,7 @@ class CheckoutController extends AbstractController
 namespace App\Controller;
 
 use E2K\PaymentBundle\DTO\CallbackPayload;
+use E2K\PaymentBundle\Enum\PaymentStatus;
 use E2K\PaymentBundle\Resolver\ActiveGatewayResolver;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -367,6 +390,9 @@ class WebhookController extends AbstractController
         if ($result->isSuccessful()) {
             // Update order status in database
             // dispatch(new PaymentReceivedEvent($result->invoiceId, $result->gatewayTransactionId));
+        } elseif (PaymentStatus::REFUNDED === $result->status) {
+            // Paystack "refund.processed": $result->invoiceId is the refunded transaction reference,
+            // $result->gatewayTransactionId the refund reference, $result->amount the refunded amount
         } else {
             // Handle failed / cancelled payment
             // $reason = $result->errorMessage;
@@ -376,6 +402,10 @@ class WebhookController extends AbstractController
     }
 }
 ```
+
+> **Ignored events**: `handle()` throws `IgnoredCallbackException` (a subclass of `InvalidCallbackException`) for authentic notifications that do not affect a payment status. On routes under `payment_route_prefix`, `PaymentExceptionListener` acknowledges them with HTTP `200` (`callback.ignored_event`) so that the provider stops retrying. Outside that prefix, catch it in your controller *before* `InvalidCallbackException`.
+>
+> **Paystack events**: `charge.success` → status from `data.status`; `refund.processed` → `PaymentStatus::REFUNDED`; every other event (`transfer.*`, `charge.dispute.*`, `subscription.*`, `refund.pending`, `refund.failed`, ...) is ignored.
 
 ### Querying Transaction Status
 
@@ -387,6 +417,56 @@ if ($status->isSuccessful()) {
     // Payment verified
 }
 ```
+
+> `getTransactionStatus()` throws a `GatewayException` when the status cannot be determined (network failure, invalid API key, unknown reference, non-JSON response, ...). It never reports such technical failures as `PaymentStatus::FAILED`, so you can safely retry later instead of cancelling an order that may have been paid.
+
+### CentralBill Polling (server-side API)
+
+CentralBill's public documentation only describes the signed Web Pay link and the IPN. When `gateways.centralbill.api_base_url` is set, the bundle also uses CentralBill's REST processor (`{api_base_url}/processor/v1/rest`) so that a payment can be polled when its IPN never arrives:
+
+1. `initiate()` first **pre-creates** the payment (`POST /payments`) with the very same signed payload as the Web Pay link. The endpoint is idempotent on `(applicationId, invoice.id, signature)`: replaying it returns the existing payment, and the hosted page reached afterwards finds it back instead of creating a second one. Since the signature covers the amount, the currency and the customer, re-initiating an invoice with another amount creates a **new** payment.
+2. `PaymentResponse::$gatewayTransactionId` then holds the **CentralBill payment id**: store it with your order, it is what you poll. `redirectUrl` is the payment link CentralBill returns for that payment (`links[rel=pay]`) when present, otherwise the locally built Web Pay link.
+3. **The pre-creation never blocks a payment**: if the API is unreachable, rate limited or answers something unusable, a warning is logged and `initiate()` returns the Web Pay link with `gatewayTransactionId = null` (no polling for that payment; the IPN still works).
+4. `fetchPayment($paymentId)` (`E2K\PaymentBundle\PaymentLookupInterface`) reads the payment back (`GET /payments/{id}`) and returns a `CallbackResult`, the same DTO as the IPN. `getTransactionStatus($paymentId)` returns its status only.
+
+**Status rules**: a payment is `SUCCESS` as soon as one of its transactions is `COMPLETED`; otherwise it is `PENDING` (a failed attempt does not fail the payment, the customer can retry until it expires; failures are reported by the IPN). `totalAmountAlreadyPaid` is deliberately not used: CentralBill states it is not the field to decide on. Technical failures throw a `GatewayException` (`isRateLimited()` is true on HTTP 429).
+
+**Before settling an order from a lookup**, check that the result really belongs to it, exactly as for an IPN: `invoiceId`, `amount` (invoice total) and `rawPayload['invoice']['customerId']`.
+
+```php
+use E2K\PaymentBundle\Enum\PaymentStatus;
+use E2K\PaymentBundle\Exception\GatewayException;
+use E2K\PaymentBundle\PaymentLookupInterface;
+
+// e.g. in a Messenger handler scheduled every few minutes for orders still unpaid after 5 minutes
+$gateway = $this->gatewayResolver->resolve('centralbill');
+
+if (!$gateway instanceof PaymentLookupInterface || null === $order->getCentralBillPaymentId()) {
+    return; // nothing to poll: rely on the IPN
+}
+
+try {
+    $result = $gateway->fetchPayment($order->getCentralBillPaymentId());
+} catch (GatewayException $e) {
+    if ($e->isRateLimited()) {
+        // back off until the quota window rolls over (20 requests / 60 s observed)
+    }
+
+    return; // retry on the next run, never cancel the order on a technical failure
+}
+
+if (PaymentStatus::SUCCESS === $result->status
+    && $result->invoiceId === $order->getNumber()
+    && 0 === bccomp((string) $result->amount, $order->getTotal(), 2)
+    && strtolower($result->rawPayload['invoice']['customerId'] ?? '') === strtolower($order->getEmail())
+) {
+    $this->orderPayment->settle($order, $result->gatewayTransactionId); // idempotent: the IPN may win the race
+}
+```
+
+> **Rate limit**: CentralBill answers HTTP 429 beyond **20 requests per 60 seconds** (observed), shared by pre-creations and lookups. Keep polling batches small, and give priority to pre-creations (a customer is waiting). The bundle is stateless: scheduling (e.g. Symfony Scheduler / Messenger) and throttling (e.g. Symfony RateLimiter) belong to the application.
+>
+> **Not covered by CentralBill's public documentation**: the endpoints, response envelopes and the absence of authentication on `GET /payments/{id}` come from a production integration, not from published specifications. The bundle tolerates several response shapes; check the behaviour against the sandbox before relying on polling.
 
 ---
 
@@ -517,8 +597,10 @@ The `PaymentExceptionListener` catches all bundle exceptions when the request UR
 | `InvalidCallbackException::missingField` | `400` | `callback.missing_field` |
 | `InvalidCallbackException::expiredRequest` | `400` | `callback.expired_request` |
 | `InvalidCallbackException::replayDetected` | `200` | `callback.replay_detected` |
-| `GatewayNotFoundException::forName` | `500` | `gateway.not_found` |
-| `GatewayNotFoundException::notConfigured` | `500` | `gateway.not_configured` |
+| `IgnoredCallbackException::unsupportedEvent` (logged as `info`) | `200` | `callback.ignored_event` |
+| `GatewayNotFoundException::forName` (unknown gateway requested, e.g. from the URL; logged as `warning`) | `404` | `gateway.not_found` |
+| `GatewayNotFoundException::noDefault` (configured `default_gateway` is not registered; logged as `critical`) | `500` | `gateway.not_found` |
+| `GatewayNotFoundException::notConfigured` (logged as `critical`) | `500` | `gateway.not_configured` |
 
 ---
 
@@ -526,9 +608,9 @@ The `PaymentExceptionListener` catches all bundle exceptions when the request UR
 
 The bundle provides message translations in both English (`en`) and French (`fr`) under the `E2KPaymentBundle` translation domain.
 
-Translation files:
-- `translations/E2KPaymentBundle.en.yaml`
-- `translations/E2KPaymentBundle.fr.yaml`
+Translation files (XLIFF, so that no extra component such as `symfony/yaml` is needed):
+- `translations/E2KPaymentBundle.en.xlf`
+- `translations/E2KPaymentBundle.fr.xlf`
 
 Messages can be customized by overriding the translation keys in your application's `translations/` directory.
 

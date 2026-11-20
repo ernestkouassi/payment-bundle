@@ -26,6 +26,7 @@ A flexible Symfony bundle for payment gateway abstraction with built-in support 
 - **PHP**: `>= 8.2`
 - **Symfony**: `^6.4` (LTS) or `^7.4` (LTS)
 - **Symfony HTTP Client**: `symfony/http-client` (required for Paystack gateway)
+- **Symfony Translation** (optional): `symfony/translation` for translated error messages (English fallback otherwise)
 
 ---
 
@@ -66,11 +67,15 @@ e2k_payment:
             web_pay_baseUrl: '%env(CENTRALBILL_WEB_PAY_BASE_URL)%'
             callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'
             redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'
+            # callback_tolerance: 300 # Max age (s) of the signed IPN "Date" header, 0 disables the check
+            # api_base_url: '%env(CENTRALBILL_API_URL)%' # e.g. https://api.centralbill.app: server-side pre-creation + polling
         paystack:
             enabled: true
             secret_key: '%env(PAYSTACK_SECRET_KEY)%'
-            api_base_url: '%env(PAYSTACK_API_BASE_URL)%' # Defaults to https://api.paystack.co
+            api_base_url: '%env(PAYSTACK_API_BASE_URL)%' # Optional, defaults to https://api.paystack.co
             callback_url: '%env(PAYSTACK_CALLBACK_URL)%'
+            # timeout: 10 # Timeout (s) of each Paystack API call
+            # webhook_secret: '%env(PAYSTACK_WEBHOOK_SECRET)%' # Recommended: verifies the timestamped "Paystack-Signature" header
 ```
 
 Define the environment variables in your `.env` or `.env.local`:
@@ -91,6 +96,8 @@ CENTRALBILL_REDIRECT_URL=https://your-domain.com/payment/return
 PAYSTACK_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxx
 PAYSTACK_API_BASE_URL=https://api.paystack.co
 PAYSTACK_CALLBACK_URL=https://your-domain.com/payments/callback/paystack
+# Webhook signing secret (Paystack dashboard > Developers > API configuration)
+PAYSTACK_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxx
 ###< e2k/payment-bundle ###
 ```
 
@@ -176,6 +183,7 @@ class PaymentWebhookController extends AbstractController
         // 2. Parse and normalize callback data
         $result = $gatewayInstance->handle($payload);
 
+        // Always process callbacks idempotently: the same notification can be delivered more than once.
         if ($result->isSuccessful()) {
             // Update order status, credit user wallet, dispatch domain events, etc.
             // $invoiceId = $result->invoiceId;

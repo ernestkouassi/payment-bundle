@@ -25,11 +25,17 @@ final readonly class CallbackPayload
         return $this->httpRequest->getContent();
     }
 
+    /**
+     * @return array<string, list<string|null>>
+     */
     public function getHeaders(): array
     {
         return $this->httpRequest->headers->all();
     }
 
+    /**
+     * @return array<string, mixed>
+     */
     public function getQueryParams(): array
     {
         return $this->httpRequest->query->all();

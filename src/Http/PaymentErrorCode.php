@@ -21,6 +21,7 @@ enum PaymentErrorCode: string
     case CALLBACK_MISSING_FIELD = 'callback.missing_field';
     case CALLBACK_EXPIRED = 'callback.expired_request';
     case CALLBACK_REPLAY = 'callback.replay_detected';
+    case CALLBACK_IGNORED = 'callback.ignored_event';
     case GATEWAY_NOT_FOUND = 'gateway.not_found';
     case GATEWAY_NOT_CONFIGURED = 'gateway.not_configured';
     case INTERNAL_ERROR = 'payment.internal_error';

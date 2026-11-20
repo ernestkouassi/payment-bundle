@@ -10,8 +10,10 @@ use E2K\PaymentBundle\DTO\PaymentRequest;
 use E2K\PaymentBundle\DTO\PaymentResponse;
 use E2K\PaymentBundle\Enum\PaymentStatus;
 use E2K\PaymentBundle\Exception\GatewayException;
+use E2K\PaymentBundle\Exception\IgnoredCallbackException;
 use E2K\PaymentBundle\Exception\InvalidCallbackException;
 use E2K\PaymentBundle\PaymentGatewayInterface;
+use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -28,7 +30,7 @@ final class PaystackGateway implements PaymentGatewayInterface
         private readonly PaystackConfig $config,
         private readonly HttpClientInterface $httpClient,
     ) {
-        $this->signatureVerifier = new PaystackSignatureVerifier($this->config->secretKey);
+        $this->signatureVerifier = new PaystackSignatureVerifier($this->config->secretKey, $this->config->webhookSecret);
     }
 
     public static function getName(): string
@@ -51,7 +53,7 @@ final class PaystackGateway implements PaymentGatewayInterface
     public function initiate(PaymentRequest $request): PaymentResponse
     {
         if (!$this->isConfigured()) {
-            throw GatewayException::configurationError($this->getName(), 'secretKey is empty.');
+            throw GatewayException::configurationError(self::getName(), 'secretKey is empty.');
         }
 
         $body = array_filter([
@@ -60,29 +62,19 @@ final class PaystackGateway implements PaymentGatewayInterface
             'currency' => $request->currency->value,
             'reference' => $request->invoiceId,
             'callback_url' => $request->callbackUrl ?? $this->config->defaultCallbackUrl,
-            'metadata' => array_merge($request->metadata, [
-                'name' => $request->customerName,
-                'description' => $request->description,
-            ]),
+            'metadata' => array_filter(
+                array_merge($request->metadata, [
+                    'name' => $request->customerName,
+                    'description' => $request->description,
+                ]),
+                static fn ($v) => null !== $v,
+            ),
         ], static fn ($v) => null !== $v && '' !== $v && [] !== $v);
 
-        try {
-            $response = $this->httpClient->request('POST', $this->config->apiBaseUrl.'/transaction/initialize', [
-                'headers' => [
-                    'Authorization' => 'Bearer '.$this->config->secretKey,
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => $body,
-            ]);
-
-            $statusCode = $response->getStatusCode();
-            $data = $response->toArray(throw: false);
-        } catch (TransportExceptionInterface $e) {
-            throw GatewayException::networkError($this->getName(), $e);
-        }
+        [$statusCode, $data] = $this->callApi('POST', '/transaction/initialize', ['json' => $body]);
 
         if (200 !== $statusCode || !($data['status'] ?? false)) {
-            throw GatewayException::httpError($this->getName(), $statusCode, $data['message'] ?? 'Unknown error');
+            throw GatewayException::httpError(self::getName(), $statusCode, (string) ($data['message'] ?? 'Unknown error'));
         }
 
         $authUrl = $data['data']['authorization_url'] ?? null;
@@ -90,7 +82,7 @@ final class PaystackGateway implements PaymentGatewayInterface
         $accessCode = $data['data']['access_code'] ?? null;
 
         if (!$authUrl) {
-            throw GatewayException::unexpectedResponse($this->getName(), 'Missing authorization_url in response.', $data);
+            throw GatewayException::unexpectedResponse(self::getName(), 'Missing authorization_url in response.', $data);
         }
 
         return new PaymentResponse(
@@ -104,7 +96,8 @@ final class PaystackGateway implements PaymentGatewayInterface
     }
 
     /**
-     * Validates the HMAC-SHA512 signature of a Paystack webhook.
+     * Validates the HMAC-SHA512 signature of a Paystack webhook: the "Paystack-Signature" header (with replay
+     * protection) when a webhook signing secret is configured, the legacy "x-paystack-signature" header otherwise.
      *
      * {@inheritdoc}
      *
@@ -123,6 +116,11 @@ final class PaystackGateway implements PaymentGatewayInterface
      *
      * {@inheritdoc}
      *
+     * - "charge.success": status mapped from data.status (SUCCESS, PENDING, CANCELLED or FAILED);
+     * - "refund.processed": REFUNDED, for the transaction referenced by data.transaction_reference;
+     * - any other event: IgnoredCallbackException (to be acknowledged with HTTP 200, no state change).
+     *
+     * @throws IgnoredCallbackException If the event does not affect the payment status
      * @throws InvalidCallbackException If the payload is malformed or incomplete
      */
     public function handle(CallbackPayload $payload): CallbackResult
@@ -134,20 +132,39 @@ final class PaystackGateway implements PaymentGatewayInterface
         }
 
         $event = $body['event'] ?? null;
-        $data = $body['data'] ?? null;
 
-        if (!$event) {
+        if (!\is_string($event) || '' === $event) {
             throw InvalidCallbackException::missingField('event');
         }
+
+        // Only these events change the state of a payment; everything else (transfers, disputes,
+        // subscriptions, other refund steps...) is acknowledged without being interpreted.
+        if (!\in_array($event, [PaystackStatus::EVENT_CHARGE_SUCCESS, PaystackStatus::EVENT_REFUND_PROCESSED], true)) {
+            throw IgnoredCallbackException::unsupportedEvent(self::getName(), $event);
+        }
+
+        $data = $body['data'] ?? null;
 
         if (!\is_array($data)) {
             throw InvalidCallbackException::missingField('data');
         }
 
+        return PaystackStatus::EVENT_REFUND_PROCESSED === $event
+            ? $this->handleRefundProcessed($data, $body)
+            : $this->handleChargeSuccess($data, $body);
+    }
+
+    /**
+     * @param array<mixed>         $data
+     * @param array<string, mixed> $body
+     *
+     * @throws InvalidCallbackException
+     */
+    private function handleChargeSuccess(array $data, array $body): CallbackResult
+    {
         $reference = $data['reference'] ?? null;
         $paystackId = $data['id'] ?? null;
         $paystackStatus = $data['status'] ?? null;
-        $amount = $data['amount'] ?? null;
 
         if (!$reference) {
             throw InvalidCallbackException::missingField('data.reference');
@@ -155,31 +172,61 @@ final class PaystackGateway implements PaymentGatewayInterface
         if (!$paystackId) {
             throw InvalidCallbackException::missingField('data.id');
         }
-        if (!$paystackStatus) {
+        if (!\is_string($paystackStatus) || '' === $paystackStatus) {
             throw InvalidCallbackException::missingField('data.status');
         }
 
-        $status = (PaystackStatus::EVENT_CHARGE_SUCCESS === $event)
-            ? PaystackStatus::toPaymentStatus($paystackStatus)
-            : PaymentStatus::FAILED;
-
-        $errorMessage = null;
-        if (!$status->isSuccessful()) {
-            $errorMessage = \sprintf(
-                'Paystack event "%s" with status "%s".',
-                $event,
-                $paystackStatus,
-            );
-        }
+        $status = PaystackStatus::toPaymentStatus($paystackStatus);
 
         return new CallbackResult(
             status: $status,
-            invoiceId: $reference,
+            invoiceId: (string) $reference,
             gatewayTransactionId: (string) $paystackId,
-            amount: isset($amount) ? number_format($amount / 100, 2, '.', '') : null,
-            errorMessage: $errorMessage,
+            amount: $this->toMajorUnits($data['amount'] ?? null),
+            errorMessage: $status->isSuccessful()
+                ? null
+                : \sprintf('Paystack event "%s" with status "%s".', PaystackStatus::EVENT_CHARGE_SUCCESS, $paystackStatus),
             rawPayload: $body,
         );
+    }
+
+    /**
+     * A processed refund. Payload documented by Paystack (https://paystack.com/docs/payments/webhooks/):
+     * {"status", "transaction_reference", "refund_reference", "amount" (string, subunits), "currency", ...},
+     * without "id". "refund_reference" may be null: the transaction reference is then used as identifier,
+     * so that an authentic refund is never rejected (a rejection would be retried by Paystack for 72 hours).
+     * "reference" and "id" are accepted as fallbacks. The amount is the refunded amount.
+     *
+     * @param array<mixed>         $data
+     * @param array<string, mixed> $body
+     *
+     * @throws InvalidCallbackException
+     */
+    private function handleRefundProcessed(array $data, array $body): CallbackResult
+    {
+        $transactionReference = $data['transaction_reference'] ?? $data['reference'] ?? null;
+
+        if (!$transactionReference) {
+            throw InvalidCallbackException::missingField('data.transaction_reference');
+        }
+
+        $refundReference = $data['refund_reference'] ?? $data['id'] ?? $transactionReference;
+
+        return new CallbackResult(
+            status: PaymentStatus::REFUNDED,
+            invoiceId: (string) $transactionReference,
+            gatewayTransactionId: (string) $refundReference,
+            amount: $this->toMajorUnits($data['amount'] ?? null),
+            rawPayload: $body,
+        );
+    }
+
+    /**
+     * Converts an amount in subunits (kobo, pesewas, cents...) into a decimal string in the main unit.
+     */
+    private function toMajorUnits(mixed $amount): ?string
+    {
+        return is_numeric($amount) ? number_format((float) $amount / 100, 2, '.', '') : null;
     }
 
     /**
@@ -187,30 +234,60 @@ final class PaystackGateway implements PaymentGatewayInterface
      *
      * {@inheritdoc}
      *
-     * @throws GatewayException If the API call fails
+     * A technical failure (network, HTTP error, invalid key, unknown reference, non-JSON body) never
+     * yields a payment status: it throws, so that callers do not mark a paid order as failed.
+     *
+     * @throws GatewayException If the API call fails or the response cannot be interpreted
      */
     public function getTransactionStatus(string $gatewayTransactionId): PaymentStatus
     {
+        if (!$this->isConfigured()) {
+            throw GatewayException::configurationError(self::getName(), 'secretKey is empty.');
+        }
+
+        [$statusCode, $data] = $this->callApi('GET', '/transaction/verify/'.rawurlencode($gatewayTransactionId));
+
+        if (200 !== $statusCode || !($data['status'] ?? false)) {
+            throw GatewayException::httpError(self::getName(), $statusCode, (string) ($data['message'] ?? 'Unknown error'));
+        }
+
+        $transactionStatus = $data['data']['status'] ?? null;
+
+        if (!\is_string($transactionStatus) || '' === $transactionStatus) {
+            throw GatewayException::unexpectedResponse(self::getName(), 'Missing data.status in verify response.', $data);
+        }
+
+        return PaystackStatus::toPaymentStatus($transactionStatus);
+    }
+
+    /**
+     * Performs an authenticated call to the Paystack API.
+     *
+     * @param array<string, mixed> $options
+     *
+     * @return array{int, array<string, mixed>} HTTP status code and decoded JSON body
+     *
+     * @throws GatewayException On network failure or non-JSON response
+     */
+    private function callApi(string $method, string $path, array $options = []): array
+    {
+        $statusCode = 0;
+
         try {
-            $response = $this->httpClient->request(
-                'GET',
-                $this->config->apiBaseUrl.'/transaction/verify/'.urlencode($gatewayTransactionId),
-                [
-                    'headers' => [
-                        'Authorization' => 'Bearer '.$this->config->secretKey,
-                    ],
-                ],
-            );
+            $response = $this->httpClient->request($method, $this->config->apiBaseUrl.$path, $options + [
+                'auth_bearer' => $this->config->secretKey,
+                'timeout' => $this->config->timeout,
+            ]);
 
-            $data = $response->toArray(throw: false);
+            $statusCode = $response->getStatusCode();
+            /** @var array<string, mixed> $data */
+            $data = $response->toArray(false);
         } catch (TransportExceptionInterface $e) {
-            throw GatewayException::networkError($this->getName(), $e);
+            throw GatewayException::networkError(self::getName(), $e);
+        } catch (DecodingExceptionInterface $e) {
+            throw GatewayException::unexpectedResponse(self::getName(), \sprintf('Non-JSON response (HTTP %d).', $statusCode));
         }
 
-        if (!($data['status'] ?? false)) {
-            return PaymentStatus::FAILED;
-        }
-
-        return PaystackStatus::toPaymentStatus($data['data']['status'] ?? 'failed');
+        return [$statusCode, $data];
     }
 }

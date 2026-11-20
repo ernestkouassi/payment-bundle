@@ -22,6 +22,9 @@ use Symfony\Component\HttpFoundation\JsonResponse;
  */
 final class ApiErrorResponse extends JsonResponse
 {
+    /**
+     * @param array<string, mixed> $details
+     */
     public function __construct(
         PaymentErrorCode $code,
         string $message,

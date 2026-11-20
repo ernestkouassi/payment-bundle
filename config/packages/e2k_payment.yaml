@@ -10,8 +10,10 @@ e2k_payment:
       web_pay_baseUrl: '%env(CENTRALBILL_WEB_PAY_BASE_URL)%'
       callback_url: '%env(CENTRALBILL_CALLBACK_URL)%'
       redirect_url: '%env(CENTRALBILL_REDIRECT_URL)%'
+      # api_base_url: '%env(CENTRALBILL_API_URL)%' # e.g. https://api.centralbill.app: server-side pre-creation + polling
     paystack:
       enabled: true
       secret_key: '%env(PAYSTACK_SECRET_KEY)%'
       api_base_url: '%env(PAYSTACK_API_BASE_URL)%'
       callback_url: '%env(PAYSTACK_CALLBACK_URL)%'
+      # webhook_secret: '%env(PAYSTACK_WEBHOOK_SECRET)%' # Recommended: verifies the timestamped "Paystack-Signature" header

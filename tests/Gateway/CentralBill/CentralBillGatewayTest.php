@@ -6,6 +6,7 @@ namespace E2K\PaymentBundle\Tests\Gateway\CentralBill;
 
 use E2K\PaymentBundle\DTO\CallbackPayload;
 use E2K\PaymentBundle\DTO\PaymentRequest;
+use E2K\PaymentBundle\DTO\PaymentResponse;
 use E2K\PaymentBundle\Enum\Currency;
 use E2K\PaymentBundle\Enum\PaymentStatus;
 use E2K\PaymentBundle\Exception\GatewayException;
@@ -83,29 +84,61 @@ final class CentralBillGatewayTest extends TestCase
 
         $this->assertSame(PaymentStatus::INITIATED, $response->status);
         $this->assertTrue($response->requiresRedirect());
-        $this->assertStringStartsWith('https://webpay.example.com/webpay/?', $response->redirectUrl);
+        $this->assertStringStartsWith('https://webpay.example.com/webpay/?', $this->redirectUrl($response));
     }
 
     #[Test]
     public function itIncludesRequiredParamsInRedirectUrl(): void
     {
-        $response = $this->gateway->initiate($this->makeRequest());
+        $url = $this->redirectUrl($this->gateway->initiate($this->makeRequest()));
 
-        $this->assertStringContainsString('applicationId=', $response->redirectUrl);
-        $this->assertStringContainsString('signature=', $response->redirectUrl);
-        $this->assertStringContainsString('ORDER-42', $response->redirectUrl);
-        $this->assertStringContainsString('XOF', $response->redirectUrl);
+        $this->assertStringContainsString('applicationId=', $url);
+        $this->assertStringContainsString('signature=', $url);
+        $this->assertStringContainsString('ORDER-42', $url);
+        $this->assertStringContainsString('XOF', $url);
     }
 
     #[Test]
-    public function itUsesProductionUrlWhenSandboxIsFalse(): void
+    public function itUsesTheConfiguredWebPayBaseUrl(): void
     {
         $config = new CentralBillConfig('id', 'secret', webPayBaseUrl: 'https://pay.centralbill.app');
         $gateway = new CentralBillGateway($config);
 
         $response = $gateway->initiate($this->makeRequest());
 
-        $this->assertStringStartsWith('https://pay.centralbill.app/?', $response->redirectUrl);
+        $this->assertStringStartsWith('https://pay.centralbill.app/?', $this->redirectUrl($response));
+    }
+
+    #[Test]
+    public function itSendsTheInvoiceDatesOfThePaymentRequest(): void
+    {
+        $request = new PaymentRequest(
+            amount: '5000',
+            currency: Currency::XOF,
+            invoiceId: 'ORDER-42',
+            customerId: 'client@example.com',
+            invoiceIssuedAt: new \DateTimeImmutable('2026-01-10T08:00:00+00:00'),
+            invoicedDueDate: new \DateTimeImmutable('2026-01-12T08:00:00+00:00'),
+            invoiceExpiresAt: new \DateTimeImmutable('2026-01-20T08:00:00+00:00'),
+        );
+
+        $params = $this->queryParams($this->gateway->initiate($request));
+
+        $this->assertSame('2026-01-10T08:00:00+00:00', $params['invoice']['issuedAt']);
+        $this->assertSame('2026-01-12T08:00:00+00:00', $params['invoice']['dueDate']);
+        $this->assertSame('2026-01-20T08:00:00+00:00', $params['invoice']['expiresAt']);
+    }
+
+    #[Test]
+    public function itDefaultsDueAndExpiryDatesWhenNotProvided(): void
+    {
+        $params = $this->queryParams($this->gateway->initiate($this->makeRequest()));
+
+        $dueDate = new \DateTimeImmutable($params['invoice']['dueDate']);
+        $expiresAt = new \DateTimeImmutable($params['invoice']['expiresAt']);
+
+        $this->assertEqualsWithDelta((new \DateTimeImmutable('+7 days'))->getTimestamp(), $dueDate->getTimestamp(), 60);
+        $this->assertEqualsWithDelta((new \DateTimeImmutable('+30 days'))->getTimestamp(), $expiresAt->getTimestamp(), 60);
     }
 
     #[Test]
@@ -118,7 +151,7 @@ final class CentralBillGatewayTest extends TestCase
         $this->assertSame(PaymentStatus::SUCCESS, $result->status);
         $this->assertSame('1', $result->invoiceId);
         $this->assertSame('tx-123', $result->gatewayTransactionId);
-        $this->assertSame(5000, (int)$result->amount);
+        $this->assertSame(5000, (int) $result->amount);
         $this->assertNull($result->errorMessage);
     }
 
@@ -131,6 +164,36 @@ final class CentralBillGatewayTest extends TestCase
         $this->assertFalse($result->isSuccessful());
         $this->assertSame(PaymentStatus::FAILED, $result->status);
         $this->assertNotNull($result->errorMessage);
+    }
+
+    #[Test]
+    public function itValidatesAnAuthenticIpnAndRejectsAForgedBody(): void
+    {
+        $body = json_encode($this->makeIpnBody('FAILED'), \JSON_THROW_ON_ERROR);
+        $request = $this->makeSignedRequest($body);
+
+        $this->gateway->validateSignature(new CallbackPayload($request, 'centralbill'));
+        $this->addToAssertionCount(1);
+
+        // Same signed headers, forged body (audit finding C1).
+        $forged = Request::create(
+            $request->getRequestUri(),
+            'POST',
+            content: json_encode($this->makeIpnBody('COMPLETED'), \JSON_THROW_ON_ERROR),
+        );
+        $forged->headers->replace($request->headers->all());
+
+        $this->expectException(InvalidCallbackException::class);
+        $this->expectExceptionMessage('does not match the signed "Digest"');
+        $this->gateway->validateSignature(new CallbackPayload($forged, 'centralbill'));
+    }
+
+    #[Test]
+    public function itReturnsCancelledOnReservedIpn(): void
+    {
+        $result = $this->gateway->handle($this->makeCallbackPayload($this->makeIpnBody('RESERVED')));
+
+        $this->assertSame(PaymentStatus::CANCELLED, $result->status);
     }
 
     #[Test]
@@ -203,6 +266,56 @@ final class CentralBillGatewayTest extends TestCase
         );
     }
 
+    private function makeSignedRequest(string $body): Request
+    {
+        $uri = '/payments/callback/centralbill?source=ipn';
+        $date = gmdate(\DATE_RFC7231);
+        $digest = 'SHA-256='.base64_encode(hash('sha256', $body));
+        $signingString = implode("\n", [
+            '(request-target): post '.$uri,
+            'content-type: application/json',
+            'date: '.$date,
+            'digest: '.$digest,
+        ]);
+
+        $request = Request::create($uri, 'POST', content: $body);
+        $request->headers->set('Content-Type', 'application/json');
+        $request->headers->set('Date', $date);
+        $request->headers->set('Digest', $digest);
+        $request->headers->set('Authorization', \sprintf(
+            'Signature keyId="%s",algorithm="hmac-sha256",headers="(request-target) content-type date digest",signature="%s"',
+            $this->config->applicationId,
+            base64_encode(hash_hmac('sha256', $signingString, $this->config->applicationSecret, true)),
+        ));
+
+        return $request;
+    }
+
+    private function redirectUrl(PaymentResponse $response): string
+    {
+        if (null === $response->redirectUrl) {
+            $this->fail('A redirect URL was expected.');
+        }
+
+        return $response->redirectUrl;
+    }
+
+    /**
+     * @return array{invoice: array{issuedAt: string, dueDate: string, expiresAt: string}}
+     */
+    private function queryParams(PaymentResponse $response): array
+    {
+        parse_str((string) parse_url($this->redirectUrl($response), \PHP_URL_QUERY), $parsed);
+
+        /** @var array{invoice: array{issuedAt: string, dueDate: string, expiresAt: string}} $params */
+        $params = $parsed;
+
+        return $params;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function makeIpnBody(string $status): array
     {
         return [
@@ -218,12 +331,15 @@ final class CentralBillGatewayTest extends TestCase
         ];
     }
 
+    /**
+     * @param array<string, mixed> $body
+     */
     private function makeCallbackPayload(array $body): CallbackPayload
     {
         $request = Request::create(
             '/payment/callback/centralbill',
             'POST',
-            content: json_encode($body),
+            content: json_encode($body, \JSON_THROW_ON_ERROR),
         );
         $request->headers->set('Content-Type', 'application/json');
 

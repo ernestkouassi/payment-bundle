@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
+    <file source-language="en" target-language="en" datatype="plaintext" original="file.ext">
+        <body>
+            <trans-unit id="error.internal">
+                <source>error.internal</source>
+                <target>An error occurred while processing the payment. Please try again.</target>
+            </trans-unit>
+            <trans-unit id="error.service_unavailable">
+                <source>error.service_unavailable</source>
+                <target>Payment service is currently unavailable.</target>
+            </trans-unit>
+            <trans-unit id="gateway.misconfigured">
+                <source>gateway.misconfigured</source>
+                <target>Payment gateway configuration error.</target>
+            </trans-unit>
+            <trans-unit id="gateway.http_error">
+                <source>gateway.http_error</source>
+                <target>Payment gateway communication error.</target>
+            </trans-unit>
+            <trans-unit id="gateway.network_error">
+                <source>gateway.network_error</source>
+                <target>Unable to reach the payment gateway.</target>
+            </trans-unit>
+            <trans-unit id="gateway.unexpected_response">
+                <source>gateway.unexpected_response</source>
+                <target>Unexpected response from payment gateway.</target>
+            </trans-unit>
+            <trans-unit id="gateway.declined">
+                <source>gateway.declined</source>
+                <target>Payment declined by the gateway.</target>
+            </trans-unit>
+            <trans-unit id="gateway.not_found">
+                <source>gateway.not_found</source>
+                <target>Payment gateway not found.</target>
+            </trans-unit>
+            <trans-unit id="gateway.not_configured">
+                <source>gateway.not_configured</source>
+                <target>Payment gateway is not configured.</target>
+            </trans-unit>
+            <trans-unit id="callback.invalid_signature">
+                <source>callback.invalid_signature</source>
+                <target>Invalid payment notification signature.</target>
+            </trans-unit>
+            <trans-unit id="callback.missing_signature">
+                <source>callback.missing_signature</source>
+                <target>Missing payment notification signature.</target>
+            </trans-unit>
+            <trans-unit id="callback.unsupported_algorithm">
+                <source>callback.unsupported_algorithm</source>
+                <target>Unsupported signature algorithm.</target>
+            </trans-unit>
+            <trans-unit id="callback.malformed_payload">
+                <source>callback.malformed_payload</source>
+                <target>Malformed payment notification payload.</target>
+            </trans-unit>
+            <trans-unit id="callback.missing_field">
+                <source>callback.missing_field</source>
+                <target>Missing required field in payment notification.</target>
+            </trans-unit>
+            <trans-unit id="callback.expired_request">
+                <source>callback.expired_request</source>
+                <target>Payment notification request has expired.</target>
+            </trans-unit>
+            <trans-unit id="callback.replay_detected">
+                <source>callback.replay_detected</source>
+                <target>Payment notification already processed.</target>
+            </trans-unit>
+            <trans-unit id="callback.ignored_event">
+                <source>callback.ignored_event</source>
+                <target>Payment notification ignored.</target>
+            </trans-unit>
+            <trans-unit id="payment.internal_error">
+                <source>payment.internal_error</source>
+                <target>An internal payment error occurred.</target>
+            </trans-unit>
+            <trans-unit id="paystack.charge_failed">
+                <source>paystack.charge_failed</source>
+                <target>Payment failed.</target>
+            </trans-unit>
+            <trans-unit id="paystack.abandoned">
+                <source>paystack.abandoned</source>
+                <target>Payment abandoned by the client.</target>
+            </trans-unit>
+        </body>
+    </file>
+</xliff>
